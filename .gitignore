@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+.playwright/
+.omo/
+.playwright-mcp/
+.lazyweb/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+!.env.example
