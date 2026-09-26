@@ -2,80 +2,85 @@
 
 ## Product truth
 
-GREEN API Telegram Chat is a browser-only operator console for one text conversation. The user enters a GREEN-API instance ID, API token, and Telegram chat ID, connects the browser directly to the API, sends text, and watches incoming text notifications arrive. It is a local/manual test prototype, not a production messenger.
+GREEN API Telegram Chat is a browser-only operator console for one Telegram text conversation. The operator enters a GREEN-API instance ID, instance API token, and Telegram chat ID, then sends and receives text directly from the browser.
 
-The primary job is **operate**: make the connection state, message direction, request state, and failure boundary unmistakable without hiding the fact that credentials are exposed to the browser.
+The product is a local/manual test prototype, not a production messenger. It has no backend, no durable history, no attachments, and no credential storage.
+
+## Design mode
+
+**Operate.** The primary job is to make one connection, one thread, and one recovery path unmistakable. The interface should feel like a focused Telegram client surface without pretending to be Telegram itself.
+
+The rejected category default is a generic analytics dashboard: equal-weight cards, fake metrics, decorative gradients, and a chat widget floating inside a shell. This product has one active thread and one connection lifecycle; the layout must make that constraint visible.
 
 ## Research log
 
-- **Context detection:** `project=green-api-telegram-chat`, `platform=desktop`, `stack=react`; searches were biased toward desktop web surfaces.
-- **Corpus:** 8 planned searches (4 median-pattern queries, 4 edge/function-level queries), 105 raw results, 91 same-company-deduplicated results, 0 failed queries. The `Games` and `Editorial` edge queries were low coverage and are treated as directional, not as a complete market map.
-- **Top-up:** `lazyweb_find_similar` was run against three strong references (messaging list, support inbox, and live event stream). It returned 15 additional results but none had `visionDescription`; they are not used as visual evidence.
-- **Selection:** 18 references were selected from the text-described corpus. No reference screenshots are copied into the product. The product borrows structural mechanisms only.
-
-### Reference clusters
-
-1. **Conversation workspace** — Intercom, Front, Reddit, Patreon, Strut, WhatsApp, OutplayHQ, Afterpay, SolidRoad, Quicksilver, LinkedIn, and Slack consistently use a stable navigation region, a readable thread region, and a composer anchored to the bottom. The useful mechanism is orientation, not their navigation taxonomy.
-2. **Activity and event stream** — Rarible, Threado, Substack, Trello, Bitdrift, Better Stack, Amplitude, PostHog, and Anime.js use timestamps, event rows, filters, and a visible live boundary. This informs the connection/receive state and the diagnostic tone of errors.
-3. **Deliberate absence** — Intercom's empty inbox and messaging empty states show that an empty thread should explain what will happen next instead of displaying a blank panel or fake activity.
+- **Reference:** `https://web.telegram.org/`, observed through public source and the available unauthenticated login evidence. Authenticated Telegram Web screens were not available and are not claimed as pixel evidence.
+- **Source evidence:** `/tmp/opencode/telegram-web-k/src/scss/variables.scss`, `src/scss/base.scss`, `src/scss/partials/_chat.scss`, `_chatBubble.scss`, `_row.scss`, and `_simpleMessageInput.scss`.
+- **Visual evidence:** `telegram-web-auth-1280.png`, `telegram-web-1280-auth.yml`, and `telegram-web-auth-1280-deep.yml` in the project root.
+- **Extracted structural rules:** 12/16/24px radius family; 360px default sidebar; 3.5rem list rows; 3rem chat header; 3rem minimum input; 16px composer radius; 85% desktop bubble width; centered capped chat content; sidebar docks above 925px and floats below it.
+- **Scope decision:** use the source rules for proportions, rhythm, and state language; use this project's own content, warning copy, and product identity rather than Telegram branding or assets.
 
 ## Direction
 
 ### Thesis
 
-Make the prototype feel like a **small signal desk**: a quiet, paper-colored operator surface where one conversation is the work, the API connection is a visible instrument, and every incoming or outgoing text has an unmistakable place in the timeline.
-
-The category default to reject is a generic dashboard shell with a card grid, fake metrics, decorative gradients, and a chat widget floating inside it. This product has one job and one thread; the interface should make that constraint visible.
+A graphite setup rail and a quiet blue-gray conversation canvas make the single text thread feel like the work. Telegram blue is reserved for the operator's outgoing messages and active connection; neutral surfaces keep the receive boundary and error states easy to scan.
 
 ### Own-world
 
-- **Material:** cool paper canvas, white working surfaces, hairline rules, and a single ink/navy text color. Blue is reserved for the user's outgoing messages and primary action; green is reserved for a confirmed live state; red is reserved for failures.
-- **Component language:** compact operator labels, monospace identifiers, message bubbles with restrained corners, thin status rails, and square-ish controls with a 6px radius. No glass, glow, gradient, or floating card treatment.
-- **Typography:** system sans for readable UI and system monospace for instance/chat IDs and request metadata. No display face, oversized headline, or decorative script.
-- **Signature interaction:** the **connection rail** moves through `Setup → Connecting → Listening → Paused/Error` and is mirrored by a compact status pill in the thread header. It is both status and orientation: the user always knows whether the empty thread is waiting, blocked, or simply empty.
+- **Material:** graphite navigation, cool blue-gray canvas, white work surfaces, one Telegram-blue action color, hairline separators, and restrained soft elevation for the composer and floating controls.
+- **Component language:** compact rows, rounded rectangular controls, low-contrast metadata, and message bubbles with a clear direction and status line. No glass, glow, gradients, or decorative texture.
+- **Typography:** system sans for the interface; system monospace only for instance IDs, chat IDs, and transport metadata.
+- **Signature interaction:** the connection state is always visible in the rail, the thread header, and the composer affordance; the thread never pretends to be live when it is only configured.
+- **Product boundary:** the browser credential warning is a visible setup footnote, not a hidden disclaimer.
 
-### First viewport
+## First viewport
 
-- A full-height application frame with a stable left connection rail and one main conversation sheet.
-- The left region contains the product mark, lifecycle status, one active thread row, and the credential form; it does not contain fake folders, team navigation, or metrics.
-- The main region contains the thread header with chat ID, direction, and mirrored connection status, a scrollable message timeline, and a bottom composer.
-- On first run, the timeline area presents a focused empty-thread explanation while the connection form remains the single place to begin setup.
-- The primary setup action is a high-contrast `Connect instance` button; after connection, the bottom composer becomes the primary text-send surface.
+- The desktop layout is a two-pane application: a stable `360px` graphite rail and a flexible conversation sheet.
+- The rail contains the product name, one connection status, the active thread summary, the credential form, and a direct-browser warning.
+- The conversation sheet contains a `3rem` top bar, an optional error notice, a centered capped message timeline, and a bottom composer.
+- The empty timeline explains the next action for setup, connecting, listening, paused, and error phases. It never shows invented messages or metrics.
+- The first action is `Connect instance`; after a successful first receive poll, the composer becomes the primary action.
 
 ## Layout and responsive rules
 
-- Desktop canvas: `min-height: 100dvh`, max width `1440px`, centered, with an `18rem minmax(0, 1fr)` two-column grid.
-- The left rail scrolls independently within the full-height application frame. Below `860px`, it becomes a two-column top region before the conversation sheet.
-- At `860px` and below, the connection summary and setup form sit side by side; the active thread row remains a compact context card. At `620px` and below, the rail stacks into a single column.
-- At `620px` and below, metadata wraps below the thread title and composer actions stack without horizontal scrolling.
-- The timeline uses `overflow-y: auto`; the composer input is capped at `40dvh` and the conversation sheet remains reachable.
-- No horizontal scrollbars, fixed viewport-height content that hides the composer, or decorative empty regions.
+- Desktop: `min-height: 100dvh`, sidebar `360px`, centered conversation content capped at `48rem`, and no horizontal overflow.
+- Tablet below `925px`: the rail becomes a floating or stacked region above the conversation sheet; the conversation remains usable without squeezing message text.
+- Mobile at `600px` and below: one column; the rail stacks; header metadata wraps; controls remain at least `40px` high; the composer stays visible below the timeline.
+- The timeline is the only independently scrolling message region. The composer is anchored to the bottom and its textarea is capped at `40dvh`.
+- Message rows use `85%` maximum bubble width on desktop; narrow screens use the available width minus the mobile gutter.
+- Reduced motion removes nonessential transitions, loading rotation, and status pulsing.
 
 ## Tokens
 
 ```css
 :root {
   color-scheme: light;
-  --canvas: #f4f6f8;
+  --canvas: #e7edf3;
   --surface: #ffffff;
-  --surface-muted: #eef2f5;
+  --surface-muted: #f5f7f9;
+  --rail: #212121;
+  --rail-raised: #2b2b2b;
+  --rail-text: #f5f5f5;
+  --rail-muted: #a7a7a7;
   --ink: #17212b;
-  --ink-soft: #41505d;
-  --muted: #6d7a86;
-  --line: #d9e1e7;
-  --line-strong: #bcc8d1;
-  --accent: #2f6fed;
-  --accent-strong: #1f58c9;
-  --accent-soft: #e8f0ff;
-  --live: #18885b;
-  --live-soft: #e4f5ed;
-  --danger: #bd3f4a;
-  --danger-soft: #fff0f1;
+  --ink-soft: #526170;
+  --muted: #707b86;
+  --line: #d7dfe6;
+  --line-strong: #b9c5cf;
+  --accent: #5288c1;
+  --accent-strong: #3f6f9f;
+  --accent-soft: #e5f0fb;
+  --live: #3aa76d;
+  --live-soft: #e7f6ed;
+  --danger: #c24b4b;
+  --danger-soft: #fff0f0;
   --warning: #9a651b;
   --warning-soft: #fff6df;
-  --focus: #1b64d9;
-  --radius-sm: 6px;
-  --radius-md: 10px;
+  --focus: #377fbd;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
   --radius-pill: 999px;
   --space-1: 4px;
   --space-2: 8px;
@@ -83,98 +88,97 @@ The category default to reject is a generic dashboard shell with a card grid, fa
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
-  --space-7: 48px;
   --font-ui: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 ```
 
-Color is never the only signal. Status text, icon shape, and copy must distinguish setup, live, sending, waiting, and failure states.
+Color is never the only signal. Status copy, icons, borders, and focus rings must distinguish setup, connecting, listening, paused, sending, sent, failed, and error states.
 
 ## Primitive inventory
 
 | Primitive | Purpose | Required states |
 | --- | --- | --- |
-| `AppFrame` | Owns viewport height, rail, and conversation sheet | desktop, compact, mobile |
-| `ConnectionRail` | Shows the API lifecycle and last request result | setup, connecting, listening, paused, error |
-| `TextField` | Instance ID and chat ID entry | default, focus, invalid, disabled |
-| `SecretField` | API token entry with reveal toggle | masked, focus, invalid, disabled, revealed |
-| `Button` | Connect, send, retry, disconnect | default, hover, focus, pressed, disabled, loading |
-| `StatusPill` | Compact live/setup/error label | setup, connecting, live, paused, error |
-| `MessageBubble` | One incoming or outgoing text event | incoming, outgoing, sending, failed, timestamp |
-| `Composer` | Multiline text entry and send action | empty, typing, sending, disabled, error |
-| `Notice` | Inline recovery or protocol explanation | info, warning, error, retry action |
-| `EmptyThread` | Explains the next action when no messages exist | setup required, listening, no messages |
-| `MetadataRow` | Shows IDs and request metadata in monospace | configured, unconfigured, ellipsized |
+| `AppFrame` | Owns the viewport, rail, and conversation sheet | desktop, tablet, mobile |
+| `ConnectionPanel` | Shows the API lifecycle and active thread identity | setup, connecting, listening, paused, error |
+| `SetupForm` | Collects the three runtime values | default, focus, invalid, disabled, loading |
+| `Button` | Connect, disconnect, send, retry, dismiss | default, hover, focus, pressed, disabled, loading |
+| `TextField` / `SecretField` | Capture IDs and the masked token | default, focus, invalid, disabled, revealed |
+| `StatusPill` | Communicates lifecycle state with text and color | setup, connecting, listening, paused, error |
+| `MessageBubble` | Shows one incoming or outgoing text event | received, sending, sent, failed |
+| `MessageComposer` | Captures and submits text | disabled, empty, typing, sending, keyboard submission |
+| `Notice` | Gives concise recovery or protocol context | info, warning, error, action |
+| `EmptyThread` | Explains the current next action | setup, connecting, listening, paused, error |
+| `MetadataRow` | Shows IDs and protocol facts | configured, unconfigured, ellipsized |
 
-Every interactive primitive must expose a visible `:focus-visible` ring, a real disabled state, and an accessible name. Buttons use icons only when the icon has a stable accessible label; text remains the default for primary actions.
+Every interactive primitive has an accessible name, a visible `:focus-visible` ring, and a real disabled state. Primary buttons, text fields, the composer, and the token reveal toggle keep a `40px` or larger target; `quiet` recovery buttons step down to `36px`, and `Retry send` inside a bubble to `28px` so it stays clear of the bubble edge. The status pill and the transport strip are not interactive and sit below that floor. Primary actions use text plus an optional Lucide icon; icons are never emoji or unlabeled glyphs.
 
 ## State contract
 
 ### Setup
 
-- Required fields: instance ID, API token, Telegram chat ID.
-- Secret values are held in component memory only and are never written to local storage, URL parameters, logs, or source.
-- Validation is inline and non-blocking. Do not claim a connection is valid until the first receive request completes or fails.
-- The empty state names the direct-browser/CORS limitation without alarming copy.
+- The operator must provide instance ID, API token, and Telegram chat ID.
+- Secrets remain in component memory only; never persist them in local storage, URL parameters, logs, or source.
+- Validation is inline and the empty state explains that the first receive request is the connection probe.
+- The rail warns that direct browser calls can fail because of CORS and exposes credentials to the page.
 
 ### Connecting
 
-- Connect button enters a loading state and the rail reads `Connecting`.
-- The first `receiveNotification` request is the connection probe. A normal empty response after the five-second timeout is a successful listening state, not an error.
-- A second connect attempt is disabled while the first is active.
+- The primary setup action becomes `Connecting` and cannot be submitted twice.
+- The first `receiveNotification` request is the probe. An empty response after the five-second window is a successful listening state, not an error.
+- The timeline and composer show the connecting state without fake activity.
 
 ### Listening
 
-- The rail reads `Listening` with a green indicator and a short human explanation.
-- The composer is enabled when instance ID, token, and chat ID are present and the client is not in a fatal error.
-- The receive loop waits five seconds between requests and deletes each matching text notification before requesting the next one.
+- The rail and header read `Listening` and show a live indicator plus human explanation.
+- The composer is enabled when all three values are present and the client is not in a fatal receive state.
+- The receive loop waits five seconds per request and processes only incoming text notifications.
 
 ### Message send
 
-- The user message appears as an outgoing bubble in a `Sending` state.
-- A successful `sendMessage` response marks it `Sent`; a failure marks it `Failed` and exposes an inline retry action.
-- No optimistic message is marked sent without a successful API response.
+- An outgoing message appears immediately with `Sending` status.
+- It becomes `Sent` only after the API resolves; a failure becomes `Failed` and exposes `Retry`.
+- The composer clears only after a successful send and never presents a failed message as delivered.
 
 ### Incoming message
 
-- Only `incomingMessageReceived` + `textMessage` notifications become incoming bubbles.
-- A newly received message is appended to the timeline's polite live region without a large entrance effect.
-- The notification is deleted after processing. If deletion fails, show a recovery notice and stop treating the receive loop as healthy until the user retries or reconnects.
+- Only `incomingMessageReceived` with a text message is shown as an incoming bubble.
+- The notification is acknowledged by the client after processing; the UI does not issue a second delete.
+- The timeline scroll follows new messages and exposes `Jump to latest` after the first message.
 
-### Error
+### Error and recovery
 
-- Protocol, authentication, CORS/network, timeout, and malformed-response errors are presented as concise notices with a next action.
+- Protocol, authentication, network/CORS, timeout, and malformed-response failures are concise notices with a next action.
 - Raw response bodies and credentials are never rendered.
-- The error state preserves the entered non-secret IDs so the user can correct one field without retyping everything.
+- The form preserves non-secret IDs after a failure so one field can be corrected without retyping everything.
 
 ## Motion and interaction
 
-- Use `120ms` ease-out color, border, shadow, and transform transitions for state changes; the loading spinner rotates at `900ms`.
+- Use `120ms` ease-out transitions for background, border, and text color, plus transform; the focus ring transitions its border and shadow on the same curve.
+- The loading indicator rotates only while work is active; the live dot makes one restrained status pulse. Those two status signals are the only looping animations in the build.
 - No gradients, glow, parallax, spring bounce, confetti, typing theatrics, or looping decorative animation.
-- The live indicator pulses once every 2.5 seconds; reduced-motion preferences collapse transitions and animation duration.
-- Message submission is explicit. Enter submits from the composer; Shift+Enter inserts a newline. The send button remains the discoverable primary path.
-- New messages scroll the timeline to the latest position, and a `Jump to latest` affordance remains available after the first message.
+- Enter submits from the composer; Shift+Enter inserts a newline. The send button remains the discoverable path.
+- `prefers-reduced-motion: reduce` collapses transitions and animation duration.
 
 ## Accessibility and QA
 
-- Use a labelled `<form>` for setup and a labelled `<form>` for the composer.
-- Status changes and incoming message text use `aria-live="polite"`; blocking failures use `role="alert"`.
-- The timeline is keyboard scrollable and each message is readable without relying on bubble color.
-- Minimum target size is 40px for primary controls and 36px for quiet icon controls.
-- Validation is split by surface: browser QA covers desktop and mobile layout, setup validation, visible focus, reduced-motion CSS, and a mocked receive/send/delete conversation; automated tests cover malformed responses, network failures, polling cleanup, and send retry state.
+- Use labelled forms for setup and composer, `aria-live="polite"` for status and incoming additions, and `role="alert"` for blocking errors.
+- The timeline is keyboard scrollable; message direction and status remain readable without bubble color.
+- Placeholder and secondary text must meet WCAG AA contrast on their actual surfaces.
+- Browser QA must cover setup, connecting, listening, empty, incoming, outgoing, sending, sent, failed send, receive failure, CORS/network failure, keyboard focus, reduced motion, and 375/768/1280px layouts.
+- Automated tests must cover malformed responses, network failures, polling cleanup, send retry state, and the acknowledgement boundary.
 
 ## Accepted debt
 
-- One active conversation only; no thread search, inbox, archive, or multiple-chat state.
-- Text messages only; no attachments, stickers, voice notes, contacts, locations, polls, or read receipts.
+- One active conversation only; no search, inbox, archive, multiple chats, or contacts.
+- Text messages only; no attachments, stickers, voice notes, polls, locations, or read receipts.
 - Credentials are intentionally browser-visible for this prototype; production requires a backend credential boundary.
-- No durable history, retry queue, reconnect/backoff policy, or offline queue.
-- Direct requests may fail because of CORS; the UI must report that honestly and must not attempt a hidden proxy or token workaround.
-- Synthetic/empty states are acceptable for the prototype, but no fake message history or fake delivery metrics may be shown as if they came from Telegram.
+- No durable history, offline queue, reconnect/backoff policy, or delivery guarantees beyond the API response.
+- Direct requests may fail because of CORS; the UI reports this honestly and does not add a hidden proxy.
+- No Telegram logo, official assets, or claims of affiliation are used.
 
 ## Finish gate
 
-The build is complete only when the connection rail, setup form, empty thread, outgoing/incoming message states, send failure, receive failure, and CORS/network failure are all reachable and visually coherent at desktop and mobile widths; the documented primitives are implemented rather than replaced by one-off markup; keyboard and reduced-motion behavior pass; and this file reflects the shipped implementation rather than an aspirational mockup.
+The build is complete only when the rail, setup form, empty states, message states, send failure, receive failure, and CORS/network failure are reachable at 375/768/1280px; the primitives above are implemented rather than replaced by one-off markup; keyboard and reduced-motion behavior pass; typecheck, lint, unit tests, browser tests, and the production build pass; and this file reflects the shipped implementation rather than an aspirational mockup.
 
-FINISH: PASS for the prototype scope. Desktop and mobile browser QA passed with zero console errors, the mocked receive/send/delete flow completed successfully, and automated tests cover the failure paths. Live GREEN-API credentials and CORS behavior remain a manual environment check.
+FINISH: PASS. Typecheck, lint, 16 unit tests, 7 browser tests, and the production build are green. `e2e/chat-smoke.spec.ts` asserts keyboard-only connect, reduced-motion behavior, overflow-free layout at 375/768/1280px, and the send, protocol, and CORS/network failure notices at each of those widths.
