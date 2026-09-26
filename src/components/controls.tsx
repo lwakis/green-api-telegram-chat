@@ -92,8 +92,10 @@ export function SecretField({
   const describedBy = [hintId, errorId].filter(Boolean).join(" ") || undefined
 
   return (
-    <label className="field" htmlFor={inputId}>
-      <span className="field__label">{label}</span>
+    <div className="field">
+      <label className="field__label" htmlFor={inputId}>
+        {label}
+      </label>
       <span className="secret-field">
         <input
           {...props}
@@ -128,7 +130,7 @@ export function SecretField({
           {error}
         </span>
       ) : null}
-    </label>
+    </div>
   )
 }
 
