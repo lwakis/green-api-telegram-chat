@@ -1,5 +1,5 @@
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
 const viteConfig = defineConfig({
   plugins: [react()],
@@ -16,6 +16,7 @@ const viteConfig = defineConfig({
     clearMocks: true,
     mockReset: true,
     restoreMocks: true,
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 })
 
