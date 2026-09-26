@@ -1,10 +1,10 @@
 # GREEN API Telegram Chat Prototype
 
-A greenfield React prototype for a text-only Telegram chat backed by GREEN-API. The browser calls GREEN-API directly to send messages, receive incoming text notifications, and delete each notification after processing it. It is meant for local development and manual verification, not production.
+A browser-only React/TypeScript prototype for one text-only Telegram conversation through a dedicated [GREEN-API Telegram instance](https://green-api.com/telegram/docs/). The browser sends messages, polls incoming notifications, and acknowledges each processed notification. It is for local development and manual verification, not production.
 
 ## Important security warning
 
-This prototype has **no backend proxy**. The GREEN-API instance ID and API token must be used by browser code, so they can be seen in browser memory, developer tools, and network requests. Anyone who can inspect the running page or capture its traffic may be able to reuse the credentials.
+This prototype has **no backend proxy**. The GREEN-API API URL, instance ID, and instance API token are used by browser code, so they can be seen in browser memory, developer tools, and network requests. Anyone who can inspect the running page or capture its traffic may be able to reuse the credentials.
 
 Never commit credentials, hardcode them in source, or treat a static build as a secure way to hide them. Use a real instance only for testing. A production version needs a server-side credential store and a backend that performs API calls.
 
@@ -13,94 +13,118 @@ Direct browser requests also depend on CORS. If the browser blocks a request bec
 ## Prerequisites
 
 - Bun 1.3.14 or a compatible newer Bun release
-- A GREEN-API account and an active instance
+- A GREEN-API Telegram account and an active Telegram instance
+- The account-specific `apiUrl` shown in the GREEN-API console, for example `https://4100.api.green-api.com`
 - The instance ID and instance API token
-- A Telegram chat ID allowed to interact with the GREEN-API instance
-- A browser and network connection that permit direct requests to `api.green-api.com`
+- A numeric Telegram chat ID allowed to interact with the instance; group and channel IDs may be negative
+- A browser and network connection that permit direct HTTPS requests to the configured GREEN-API host
 
-Bun is the runtime and package manager for this project. Node and pnpm aren't required.
+Bun is the runtime and package manager for this project. Node and pnpm are not required.
 
-## Planned Bun commands
-
-The implementation should provide these package scripts:
+## Commands
 
 ```bash
 bun install
+bunx playwright install chromium
 bun run dev
-bun run build
 bun run test
+bun run test:e2e
+bun run typecheck
+bun run lint
+bun run build
+bun run preview
 ```
 
-Use `bun install` to install dependencies, `bun run dev` to start the local development server, `bun run build` to create a production build, and `bun run test` to run the automated tests. These commands become available once the implementation adds the corresponding `package.json` scripts.
+Use `bun run dev` to start the local development server, `bun run test` to run the unit tests, `bun run test:e2e` to run the Playwright browser test, `bun run typecheck` to run TypeScript without emitting files, `bun run lint` to run Biome checks, and `bun run build` to create a production build.
 
-## GREEN-API request flow
+`bun run test:e2e` needs a Chromium build that matches the installed Playwright version. Run `bunx playwright install chromium` once after installing dependencies, and again whenever Playwright is upgraded. The command starts its own development server on `127.0.0.1:5173` and drives the app in a real browser with mocked GREEN-API routes, so it never contacts a live instance.
 
-The verified base URL shape is:
+## GREEN-API Telegram request flow
+
+The client uses the account-specific API URL from the GREEN-API console. Do not replace it with a generic WhatsApp host. The request path shape is:
 
 ```text
-https://api.green-api.com/waInstance{{idInstance}}/...
+{{apiUrl}}/waInstance{{idInstance}}/{{method}}/{{apiTokenInstance}}
 ```
 
-For this instance, complete the URL with `GreenApiAuthToken{{apiTokenInstance}}`, then append the lowercase endpoint name. For example:
+For example, with `apiUrl=https://4100.api.green-api.com`, `idInstance=123`, and an instance token:
 
 ```text
-https://api.green-api.com/waInstance{{idInstance}}/GreenApiAuthToken{{apiTokenInstance}}/sendMessage
+https://4100.api.green-api.com/waInstance123/sendMessage/{{apiTokenInstance}}
 ```
 
-Replace each `{{...}}` placeholder with a value from your own GREEN-API instance. Double braces are documentation placeholders and aren't part of the final URL.
+The client follows this order:
 
-The prototype follows this order:
-
-1. Send a `POST` request to `sendMessage` with this JSON body:
+1. Send `POST sendMessage` with a JSON body:
 
    ```json
    {
-     "chatId": "<CHAT_ID>",
-     "textMessage": "<MESSAGE_TEXT>"
+     "chatId": "123456789",
+     "message": "Hello from the browser"
    }
    ```
 
-2. Call `GET receiveNotification?receiveTimeout=5`. The allowed `receiveTimeout` range is 5-60 seconds; the prototype uses the exact 5-second request shown here.
+   A successful response includes an `idMessage` value.
 
-3. Process only notifications where both conditions are true:
+2. Call `GET receiveNotification?receiveTimeout=5`. The GREEN-API notification wait accepts values from 5 to 60 seconds; this prototype uses the minimum five-second wait.
 
-   ```js
-   notification.typeWebhook === "incomingMessageReceived" &&
-   notification.typeMessage === "textMessage"
-   ```
-
-4. After processing a matching text notification, call `POST deleteNotification` with its ID:
+3. Process only incoming text notifications. The relevant response shape is:
 
    ```json
    {
-     "id": 1234
+     "receiptId": 456,
+     "body": {
+       "typeWebhook": "incomingMessageReceived",
+       "timestamp": 1700000000,
+       "senderData": {
+         "chatId": "123456789",
+         "sender": "123456789"
+       },
+       "messageData": {
+         "typeMessage": "textMessage",
+         "textMessageData": {
+           "textMessage": "Reply from Telegram"
+         }
+       }
+     }
    }
    ```
 
-5. After `deleteNotification` completes, call `receiveNotification?receiveTimeout=5` again. There is no offset-based continuation contract in this prototype. An empty response during the timeout isn't an error; it means that no notification arrived during that wait period.
+4. After a notification is processed, acknowledge it with `DELETE deleteNotification/{receiptId}`. The request must return `{ "result": true }`; a failed acknowledgement is treated as a protocol error.
+
+5. Poll `receiveNotification` again. An empty response during the wait is normal and means that no notification arrived during that interval.
+
+The dedicated Telegram gateway uses numeric chat IDs. WhatsApp-style identifiers such as `987@c.us` are rejected by the client.
 
 ## Manual verification
 
-Once the React implementation and package scripts exist:
-
 1. Run `bun install`, then `bun run dev`.
 2. Open the local URL printed by the development server.
-3. Enter the GREEN-API instance ID and API token at runtime. Don't put either value in source files.
-4. Enter a valid Telegram chat ID and send a short text message.
-5. In the browser network panel, confirm that the request uses `POST /sendMessage` and sends `chatId` plus `textMessage` in the JSON body.
-6. Confirm that the recipient receives the message, then send a text reply from another Telegram client.
-7. Confirm that `GET /receiveNotification?receiveTimeout=5` returns the reply and that the UI processes it only when `typeWebhook` is `incomingMessageReceived` and `typeMessage` is `textMessage`.
-8. After the UI processes the text, confirm that `POST /deleteNotification` is called with the same notification ID.
-9. Confirm that another `receiveNotification?receiveTimeout=5` request runs after deletion and that the processed notification isn't shown again.
-10. Check the browser console and network panel for errors, especially CORS failures.
+3. Enter the GREEN-API console `apiUrl`, instance ID, instance API token, and numeric Telegram chat ID at runtime. Do not put credentials in source files.
+4. Send a short text message and confirm in the browser network panel that the request is `POST .../sendMessage/...` and sends `chatId` plus `message` in the JSON body.
+5. Confirm that the recipient receives the message, then send a text reply from another Telegram client.
+6. Confirm that `GET .../receiveNotification/...?receiveTimeout=5` returns the reply and that the UI reads `body.messageData.textMessageData.textMessage`.
+7. Confirm that the processed notification is acknowledged with `DELETE .../deleteNotification/.../{receiptId}` and that the response contains `result: true`.
+8. Confirm that another receive poll starts after acknowledgement and that the processed notification is not shown again.
+9. Check the browser console and network panel for errors, especially CORS failures.
 
 ## Prototype limitations
 
-- Text messages only. Only `incomingMessageReceived` notifications whose `typeMessage` is `textMessage` are processed.
-- Media, stickers, contacts, locations, polls, and other notification types aren't processed.
+- Text messages only. Only `incomingMessageReceived` notifications whose `messageData.typeMessage` is `textMessage` are displayed.
+- Media, stickers, contacts, locations, polls, and other notification types are not processed.
+- One active conversation only; there is no durable history or database.
 - No backend proxy, server-side secret storage, user authentication, or tenant isolation.
-- No durable chat history or database.
-- No production-grade retry, delivery-status, or reconnect policy.
-- No mobile or production layout guarantees.
+- No production-grade delivery-status, retry, or reconnect policy.
 - Direct browser access may be blocked by CORS.
 - API credentials are exposed to the browser and must be treated as compromised.
+
+## Official references
+
+- [GREEN-API Telegram documentation](https://green-api.com/telegram/docs/)
+- [Request format](https://green-api.com/telegram/docs/request-format/)
+- [Sending messages](https://green-api.com/telegram/docs/api/sending/SendMessage/)
+- [Receiving notifications](https://green-api.com/telegram/docs/api/receiving/technology-http-api/ReceiveNotification/)
+- [Deleting notifications](https://green-api.com/telegram/docs/api/receiving/technology-http-api/DeleteNotification/)
+- [Telegram chat IDs](https://green-api.com/telegram/docs/api/chat-id/)
+- [Before starting](https://green-api.com/telegram/docs/before-start/)
+- [Important differences](https://green-api.com/telegram/docs/important-differences/)
