@@ -1,0 +1,19 @@
+- generic [ref=f1e4] [box=0,0,1280,800]:
+  - button "" [ref=f1e5] [cursor=pointer] [box=1216,24,40,40]
+  - generic [ref=f1e10] [box=444,80,392,683]:
+    - generic [ref=f1e11] [box=460,112,360,319]:
+      - generic [ref=f1e17] [box=460,376,360,30]: Log in by QR Code
+      - generic [ref=f1e18] [box=460,410,360,21]: Scan with Telegram app on your phone
+    - list [ref=f1e19] [box=460,455,360,108]:
+      - listitem [ref=f1e20] [box=476,455,344,22]:
+        - generic [ref=f1e21] [box=476,455,22,22]: "1"
+        - generic [ref=f1e22] [box=510,455,212,22]: Open Telegram on your phone
+      - listitem [ref=f1e23] [box=476,487,344,22]:
+        - generic [ref=f1e24] [box=476,487,22,22]: "2"
+        - generic [ref=f1e25] [box=510,487,270,22]: Go to SettingsDevicesAdd Device
+      - listitem [ref=f1e26] [box=476,519,344,44]:
+        - generic [ref=f1e27] [box=476,519,22,22]: "3"
+        - generic [ref=f1e28] [box=510,519,310,44]: Point your phone at this screen to confirm login
+    - button "Log in by phone number" [ref=f1e29] [cursor=pointer] [box=460,587,360,48]
+    - button "Продолжить на русском" [ref=f1e33] [cursor=pointer] [box=460,643,360,48]
+    - button "Log in by passkey" [ref=f1e36] [cursor=pointer] [box=460,699,360,48]
