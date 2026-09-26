@@ -1,5 +1,6 @@
 import ky from "ky"
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 
 import { createGreenApiClient, parseGreenApiCredentials } from "./greenApi"
 
@@ -43,41 +44,55 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function createCredentials() {
   return parseGreenApiCredentials({
+    apiUrl: "https://4100.api.green-api.com",
     instanceId: "123",
     apiTokenInstance: "token",
-    chatId: "987",
+    chatId: "987654321",
   })
 }
 
+function createTextNotification() {
+  return {
+    receiptId: 456,
+    body: {
+      typeWebhook: "incomingMessageReceived",
+      timestamp: 1_700_000_000,
+      senderData: {
+        chatId: "987654321",
+        sender: "987654321",
+        chatName: "Test chat",
+        senderName: "Test sender",
+      },
+      messageData: {
+        typeMessage: "textMessage",
+        textMessageData: {
+          textMessage: "reply from Telegram",
+        },
+      },
+    },
+  }
+}
+
 describe("GREEN-API client", () => {
-  it("sends a text message to the documented endpoint", async () => {
-    const fixture = createHttpFixture([jsonResponse({ id: "message-1" })])
+  it("sends a text message through the account-specific Telegram endpoint", async () => {
+    const fixture = createHttpFixture([jsonResponse({ idMessage: "message-1" })])
     const client = createGreenApiClient(createCredentials(), fixture.http)
 
     await client.sendText("hello")
 
     const request = fixture.calls[0]?.request
     expect(request?.method).toBe("POST")
-    expect(request?.url).toBe(
-      "https://api.green-api.com/waInstance123/GreenApiAuthTokentoken/sendMessage",
-    )
+    expect(request?.url).toBe("https://4100.api.green-api.com/waInstance123/sendMessage/token")
     expect(await request?.json()).toEqual({
-      chatId: "987",
-      textMessage: "hello",
+      chatId: "987654321",
+      message: "hello",
     })
   })
 
-  it("returns a matching incoming text notification", async () => {
+  it("normalizes and acknowledges an incoming Telegram text notification", async () => {
     const fixture = createHttpFixture([
-      jsonResponse({
-        id: 456,
-        typeWebhook: "incomingMessageReceived",
-        typeMessage: "textMessage",
-        textMessage: "reply from Telegram",
-        chatId: "987",
-        senderId: "987",
-        timestamp: 1_700_000_000,
-      }),
+      jsonResponse(createTextNotification()),
+      jsonResponse({ result: true }),
     ])
     const client = createGreenApiClient(createCredentials(), fixture.http)
 
@@ -85,56 +100,96 @@ describe("GREEN-API client", () => {
 
     expect(notification).toEqual({
       notificationId: "456",
-      chatId: "987",
-      senderId: "987",
+      chatId: "987654321",
+      senderId: "987654321",
       text: "reply from Telegram",
       timestamp: 1_700_000_000,
     })
     expect(fixture.calls[0]?.request.url).toBe(
-      "https://api.green-api.com/waInstance123/GreenApiAuthTokentoken/receiveNotification?receiveTimeout=5",
+      "https://4100.api.green-api.com/waInstance123/receiveNotification/token?receiveTimeout=5",
+    )
+    expect(fixture.calls[1]?.request.method).toBe("DELETE")
+    expect(fixture.calls[1]?.request.url).toBe(
+      "https://4100.api.green-api.com/waInstance123/deleteNotification/token/456",
     )
   })
 
-  it("returns null for a non-matching notification", async () => {
-    const fixture = createHttpFixture([
-      jsonResponse({
-        id: 456,
-        typeWebhook: "outgoingMessageStatus",
-        typeMessage: "textMessage",
-      }),
-    ])
+  it("returns null when the long poll times out", async () => {
+    const fixture = createHttpFixture([new Response(null, { status: 204 })])
     const client = createGreenApiClient(createCredentials(), fixture.http)
 
     await expect(client.receiveText()).resolves.toBeNull()
   })
 
-  it("deletes a processed notification by its ID", async () => {
+  it("acknowledges and ignores a non-matching notification", async () => {
     const fixture = createHttpFixture([
       jsonResponse({
-        id: 456,
-        typeWebhook: "incomingMessageReceived",
-        typeMessage: "textMessage",
-        textMessage: "reply from Telegram",
-        chatId: "987",
-        senderId: "987",
+        receiptId: 456,
+        body: { typeWebhook: "outgoingMessageStatus" },
       }),
-      jsonResponse(true),
+      jsonResponse({ result: true }),
     ])
     const client = createGreenApiClient(createCredentials(), fixture.http)
-    const notification = await client.receiveText()
 
-    if (notification === null) {
-      throw new Error("Expected an incoming text notification")
-    }
-
-    await client.deleteNotification(notification.notificationId)
-
-    const request = fixture.calls[1]?.request
-    expect(request?.method).toBe("POST")
-    expect(request?.url).toBe(
-      "https://api.green-api.com/waInstance123/GreenApiAuthTokentoken/deleteNotification",
+    await expect(client.receiveText()).resolves.toBeNull()
+    expect(fixture.calls[1]?.request.method).toBe("DELETE")
+    expect(fixture.calls[1]?.request.url).toBe(
+      "https://4100.api.green-api.com/waInstance123/deleteNotification/token/456",
     )
-    expect(await request?.json()).toEqual({ id: "456" })
+  })
+
+  it("deletes a processed notification by receipt ID", async () => {
+    const fixture = createHttpFixture([jsonResponse({ result: true })])
+    const client = createGreenApiClient(createCredentials(), fixture.http)
+
+    const notificationId = z.string().brand("NotificationId").parse("456")
+    await client.deleteNotification(notificationId)
+
+    const request = fixture.calls[0]?.request
+    expect(request?.method).toBe("DELETE")
+    expect(request?.url).toBe(
+      "https://4100.api.green-api.com/waInstance123/deleteNotification/token/456",
+    )
+    expect(request?.body).toBeNull()
+  })
+
+  it("does not acknowledge a notification when deletion is rejected", async () => {
+    const fixture = createHttpFixture([
+      jsonResponse(createTextNotification()),
+      jsonResponse({ result: false }),
+    ])
+    const client = createGreenApiClient(createCredentials(), fixture.http)
+
+    await expect(client.receiveText()).rejects.toMatchObject({
+      name: "GreenApiError",
+      code: "protocol",
+    })
+  })
+
+  it("rejects missing API URLs and WhatsApp-style chat IDs", () => {
+    expect(() =>
+      parseGreenApiCredentials({
+        instanceId: "123",
+        apiTokenInstance: "token",
+        chatId: "987654321",
+      }),
+    ).toThrow()
+    expect(() =>
+      parseGreenApiCredentials({
+        apiUrl: "not-a-url",
+        instanceId: "123",
+        apiTokenInstance: "token",
+        chatId: "987654321",
+      }),
+    ).toThrow()
+    expect(() =>
+      parseGreenApiCredentials({
+        apiUrl: "https://4100.api.green-api.com",
+        instanceId: "123",
+        apiTokenInstance: "token",
+        chatId: "987@c.us",
+      }),
+    ).toThrow()
   })
 
   it("maps an authentication response to a typed error", async () => {
@@ -164,7 +219,7 @@ describe("GREEN-API client", () => {
   })
 
   it("rejects malformed receive responses as protocol errors", async () => {
-    const fixture = createHttpFixture([jsonResponse({ id: 456 })])
+    const fixture = createHttpFixture([jsonResponse({ body: {} })])
     const client = createGreenApiClient(createCredentials(), fixture.http)
 
     await expect(client.receiveText()).rejects.toMatchObject({
