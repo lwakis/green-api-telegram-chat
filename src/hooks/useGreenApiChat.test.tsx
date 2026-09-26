@@ -12,9 +12,10 @@ import {
 import { useGreenApiChat } from "./useGreenApiChat"
 
 const credentials = parseGreenApiCredentials({
+  apiUrl: "https://4100.api.green-api.com",
   instanceId: "123",
   apiTokenInstance: "token",
-  chatId: "987",
+  chatId: "987654321",
 })
 
 type Deferred<T> = {
@@ -112,7 +113,7 @@ describe("useGreenApiChat", () => {
     expect(fixture.receiveCalls()).toBe(2)
   })
 
-  it("adds an incoming message and deletes its notification", async () => {
+  it("adds an incoming message without acknowledging it twice", async () => {
     const fixture = createClientFixture()
     const nextReceive = createDeferred<IncomingTextMessage | null>()
     fixture.queueReceive(Promise.resolve(createIncomingMessage()))
@@ -131,7 +132,7 @@ describe("useGreenApiChat", () => {
       text: "A reply from Telegram",
       status: "received",
     })
-    expect(fixture.deleteCalls).toEqual(["notification-1"])
+    expect(fixture.deleteCalls).toEqual([])
     expect(fixture.receiveCalls()).toBe(2)
   })
 

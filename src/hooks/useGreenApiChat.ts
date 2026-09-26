@@ -5,20 +5,17 @@ import {
   type GreenApiClient,
   type GreenApiCredentials,
   GreenApiError,
-  type IncomingTextMessage,
-  type NotificationId,
 } from "../api/greenApi"
+import {
+  type ChatMessage,
+  type ChatPhase,
+  createIncomingChatMessage,
+  createOutgoingChatMessage,
+  normalizeChatError,
+  updateMessageStatus,
+} from "./chatModel"
 
-export type ChatPhase = "setup" | "connecting" | "listening" | "paused" | "error"
-
-export type ChatMessage = {
-  readonly id: string
-  readonly direction: "incoming" | "outgoing"
-  readonly text: string
-  readonly createdAt: number
-  readonly status: "received" | "sending" | "sent" | "failed"
-  readonly notificationId?: NotificationId
-}
+export type { ChatMessage, ChatPhase } from "./chatModel"
 
 export type ChatClientFactory = (credentials: GreenApiCredentials) => GreenApiClient
 
@@ -38,21 +35,6 @@ type UseGreenApiChatResult = {
   readonly clearError: () => void
 }
 
-let messageSequence = 0
-
-function createMessageId(): string {
-  messageSequence += 1
-  return `message-${Date.now()}-${messageSequence}`
-}
-
-function normalizeError(error: unknown): GreenApiError {
-  if (error instanceof GreenApiError) {
-    return error
-  }
-
-  return new GreenApiError("protocol", "The chat client encountered an unexpected error.")
-}
-
 export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenApiChatResult {
   const [phase, setPhase] = useState<ChatPhase>("setup")
   const [messages, setMessages] = useState<readonly ChatMessage[]>([])
@@ -60,13 +42,9 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
   const clientRef = useRef<GreenApiClient | null>(null)
   const operationRef = useRef(0)
   const mountedRef = useRef(false)
-  const messagesRef = useRef<readonly ChatMessage[]>([])
-  const createClientRef = useRef<ChatClientFactory>(options.createClient ?? createGreenApiClient)
-  const nowRef = useRef<() => number>(options.now ?? Date.now)
 
-  createClientRef.current = options.createClient ?? createGreenApiClient
-  nowRef.current = options.now ?? Date.now
-  messagesRef.current = messages
+  const createClient = options.createClient ?? createGreenApiClient
+  const now = options.now ?? Date.now
 
   const isCurrentOperation = useCallback(
     (operationId: number): boolean => mountedRef.current && operationRef.current === operationId,
@@ -85,28 +63,15 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
 
           setPhase((currentPhase) => (currentPhase === "error" ? currentPhase : "listening"))
 
-          if (incomingMessage === null) {
-            continue
-          }
-
-          setMessages((currentMessages) => [
-            ...currentMessages,
-            createIncomingMessage(incomingMessage, nowRef.current()),
-          ])
-
-          try {
-            await client.deleteNotification(incomingMessage.notificationId)
-          } catch (deleteError) {
-            if (isCurrentOperation(operationId)) {
-              setError(normalizeError(deleteError))
-              setPhase("error")
-            }
-
-            return
+          if (incomingMessage !== null) {
+            setMessages((currentMessages) => [
+              ...currentMessages,
+              createIncomingChatMessage(incomingMessage, now()),
+            ])
           }
         } catch (receiveError) {
           if (isCurrentOperation(operationId)) {
-            setError(normalizeError(receiveError))
+            setError(normalizeChatError(receiveError))
             setPhase("error")
           }
 
@@ -114,7 +79,7 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
         }
       }
     },
-    [isCurrentOperation],
+    [isCurrentOperation, now],
   )
 
   const connect = useCallback(
@@ -124,10 +89,10 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
       let client: GreenApiClient
 
       try {
-        client = createClientRef.current(credentials)
+        client = createClient(credentials)
       } catch (createError) {
         if (isCurrentOperation(operationId)) {
-          setError(normalizeError(createError))
+          setError(normalizeChatError(createError))
           setPhase("error")
         }
         return
@@ -139,7 +104,7 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
       setPhase("connecting")
       void receiveLoop(client, operationId)
     },
-    [isCurrentOperation, receiveLoop],
+    [createClient, isCurrentOperation, receiveLoop],
   )
 
   const disconnect = useCallback((): void => {
@@ -155,26 +120,16 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
         await client.sendText(message.text)
 
         if (isCurrentOperation(operationId)) {
-          setMessages((currentMessages) =>
-            currentMessages.map((currentMessage) =>
-              currentMessage.id === message.id
-                ? { ...currentMessage, status: "sent" }
-                : currentMessage,
-            ),
-          )
+          setMessages((currentMessages) => updateMessageStatus(currentMessages, message.id, "sent"))
         }
 
         return true
       } catch (sendError) {
         if (isCurrentOperation(operationId)) {
           setMessages((currentMessages) =>
-            currentMessages.map((currentMessage) =>
-              currentMessage.id === message.id
-                ? { ...currentMessage, status: "failed" }
-                : currentMessage,
-            ),
+            updateMessageStatus(currentMessages, message.id, "failed"),
           )
-          setError(normalizeError(sendError))
+          setError(normalizeChatError(sendError))
         }
 
         return false
@@ -201,24 +156,18 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
         return false
       }
 
-      const message: ChatMessage = {
-        id: createMessageId(),
-        direction: "outgoing",
-        text,
-        createdAt: nowRef.current(),
-        status: "sending",
-      }
+      const message = createOutgoingChatMessage(text, now())
       const operationId = operationRef.current
       setMessages((currentMessages) => [...currentMessages, message])
       return deliverOutgoing(message, client, operationId)
     },
-    [deliverOutgoing],
+    [deliverOutgoing, now],
   )
 
   const retryMessage = useCallback(
     async (messageId: string): Promise<boolean> => {
       const client = clientRef.current
-      const message = messagesRef.current.find(
+      const message = messages.find(
         (currentMessage) =>
           currentMessage.id === messageId &&
           currentMessage.direction === "outgoing" &&
@@ -230,16 +179,10 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
       }
 
       const operationId = operationRef.current
-      setMessages((currentMessages) =>
-        currentMessages.map((currentMessage) =>
-          currentMessage.id === messageId
-            ? { ...currentMessage, status: "sending" }
-            : currentMessage,
-        ),
-      )
+      setMessages((currentMessages) => updateMessageStatus(currentMessages, messageId, "sending"))
       return deliverOutgoing(message, client, operationId)
     },
-    [deliverOutgoing],
+    [deliverOutgoing, messages],
   )
 
   const clearError = useCallback((): void => {
@@ -266,19 +209,5 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
     sendText,
     retryMessage,
     clearError,
-  }
-}
-
-function createIncomingMessage(
-  incomingMessage: IncomingTextMessage,
-  createdAt: number,
-): ChatMessage {
-  return {
-    id: createMessageId(),
-    direction: "incoming",
-    text: incomingMessage.text,
-    createdAt,
-    status: "received",
-    notificationId: incomingMessage.notificationId,
   }
 }
