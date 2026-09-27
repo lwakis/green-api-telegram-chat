@@ -16,7 +16,7 @@ The rejected category default is a generic analytics dashboard: equal-weight car
 
 - **Reference:** `https://web.telegram.org/`, observed through public source and the available unauthenticated login evidence. Authenticated Telegram Web screens were not available and are not claimed as pixel evidence.
 - **Source evidence:** `/tmp/opencode/telegram-web-k/src/scss/variables.scss`, `src/scss/base.scss`, `src/scss/partials/_chat.scss`, `_chatBubble.scss`, `_row.scss`, and `_simpleMessageInput.scss`.
-- **Visual evidence:** `telegram-web-auth-1280.png`, `telegram-web-1280-auth.yml`, and `telegram-web-auth-1280-deep.yml` in the project root.
+- **Visual evidence:** `telegram-web-1280-auth.yml` and `telegram-web-auth-1280-deep.yml` in the project root. The rendered `telegram-web-auth-1280.png` is a local capture and is git-ignored to keep the binary out of history, so a fresh clone carries the structural snapshots without it.
 - **Extracted structural rules:** 12/16/24px radius family; 360px default sidebar; 3.5rem list rows; 3rem chat header; 3rem minimum input; 16px composer radius; 85% desktop bubble width; centered capped chat content; sidebar docks above 925px and floats below it.
 - **Scope decision:** use the source rules for proportions, rhythm, and state language; use this project's own content, warning copy, and product identity rather than Telegram branding or assets.
 

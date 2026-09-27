@@ -9,6 +9,7 @@ playwright/.cache/
 .omo/
 .playwright-mcp/
 .lazyweb/
+telegram-web-*.png
 *.tsbuildinfo
 .DS_Store
 .env
