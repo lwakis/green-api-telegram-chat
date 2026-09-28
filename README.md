@@ -16,7 +16,7 @@ Direct browser requests also depend on CORS. If the browser blocks a request bec
 - A GREEN-API Telegram account and an active Telegram instance
 - The account-specific `apiUrl` shown in the GREEN-API console, for example `https://4100.api.green-api.com`
 - The instance ID and instance API token
-- A numeric Telegram chat ID allowed to interact with the instance; group and channel IDs may be negative
+- A Telegram recipient the instance is allowed to message: a phone number in international format without `+` or punctuation, or an `@username` for accounts hidden by privacy settings
 - A browser and network connection that permit direct HTTPS requests to the configured GREEN-API host
 
 Bun is the runtime and package manager for this project. Node and pnpm are not required.
@@ -55,7 +55,17 @@ https://4100.api.green-api.com/waInstance123/sendMessage/{{apiTokenInstance}}
 
 The client follows this order:
 
-1. Send `POST sendMessage` with a JSON body:
+1. Resolve the recipient with `POST checkAccount`. The recipient is sent as `phoneNumber`, as a number for a phone and as a string for an `@username`:
+
+   ```json
+   {
+     "phoneNumber": 79876543210
+   }
+   ```
+
+   A successful response includes `exist: true` and the numeric `chatId` to send to. `exist: false` means Telegram cannot resolve the recipient, and `status: false` means the instance token is not authorized for the method.
+
+2. Send `POST sendMessage` with a JSON body:
 
    ```json
    {
@@ -66,9 +76,9 @@ The client follows this order:
 
    A successful response includes an `idMessage` value.
 
-2. Call `GET receiveNotification?receiveTimeout=5`. The GREEN-API notification wait accepts values from 5 to 60 seconds; this prototype uses the minimum five-second wait.
+3. Call `GET receiveNotification?receiveTimeout=5`. The GREEN-API notification wait accepts values from 5 to 60 seconds; this prototype uses the minimum five-second wait.
 
-3. Process only incoming text notifications. The relevant response shape is:
+4. Process only incoming text notifications. The relevant response shape is:
 
    ```json
    {
@@ -90,18 +100,18 @@ The client follows this order:
    }
    ```
 
-4. After a notification is processed, acknowledge it with `DELETE deleteNotification/{receiptId}`. The request must return `{ "result": true }`; a failed acknowledgement is treated as a protocol error.
+5. After a notification is processed, acknowledge it with `DELETE deleteNotification/{receiptId}`. The request must return `{ "result": true }`; a failed acknowledgement is treated as a protocol error.
 
-5. Poll `receiveNotification` again. An empty response during the wait is normal and means that no notification arrived during that interval.
+6. Poll `receiveNotification` again. An empty response during the wait is normal and means that no notification arrived during that interval.
 
-The dedicated Telegram gateway uses numeric chat IDs. WhatsApp-style identifiers such as `987@c.us` are rejected by the client.
+The recipient is what the user types, and the client resolves it to the numeric chat ID the Telegram gateway uses. A phone number must be in international format without `+` or punctuation, so `79876543210` is accepted and `+7 (987) 654-32-10` is not. An `@username` is passed to `checkAccount` unchanged, which is the way to reach an account hidden by privacy settings. WhatsApp-style identifiers such as `987@c.us` are rejected by the client.
 
 ## Manual verification
 
 1. Run `bun install`, then `bun run dev`.
 2. Open the local URL printed by the development server.
-3. Enter the GREEN-API console `apiUrl`, instance ID, instance API token, and numeric Telegram chat ID at runtime. Do not put credentials in source files.
-4. Send a short text message and confirm in the browser network panel that the request is `POST .../sendMessage/...` and sends `chatId` plus `message` in the JSON body.
+3. Enter the GREEN-API console `apiUrl`, instance ID, instance API token, and a recipient at runtime. Do not put credentials in source files.
+4. Send a short text message and confirm in the browser network panel that the request is `POST .../checkAccount/...` for the recipient first, then `POST .../sendMessage/...` sending `chatId` plus `message` in the JSON body.
 5. Confirm that the recipient receives the message, then send a text reply from another Telegram client.
 6. Confirm that `GET .../receiveNotification/...?receiveTimeout=5` returns the reply and that the UI reads `body.messageData.textMessageData.textMessage`.
 7. Confirm that the processed notification is acknowledged with `DELETE .../deleteNotification/.../{receiptId}` and that the response contains `result: true`.
@@ -122,6 +132,7 @@ The dedicated Telegram gateway uses numeric chat IDs. WhatsApp-style identifiers
 
 - [GREEN-API Telegram documentation](https://green-api.com/telegram/docs/)
 - [Request format](https://green-api.com/telegram/docs/request-format/)
+- [Checking an account](https://green-api.com/telegram/docs/api/account/CheckAccount/)
 - [Sending messages](https://green-api.com/telegram/docs/api/sending/SendMessage/)
 - [Receiving notifications](https://green-api.com/telegram/docs/api/receiving/technology-http-api/ReceiveNotification/)
 - [Deleting notifications](https://green-api.com/telegram/docs/api/receiving/technology-http-api/DeleteNotification/)

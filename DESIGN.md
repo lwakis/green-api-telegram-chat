@@ -2,7 +2,7 @@
 
 ## Product truth
 
-GREEN API Telegram Chat is a browser-only operator console for one Telegram text conversation. The operator enters a GREEN-API instance ID, instance API token, and Telegram chat ID, then sends and receives text directly from the browser.
+GREEN API Telegram Chat is a browser-only operator console for one Telegram text conversation. The operator enters a GREEN-API instance ID, instance API token, and a Telegram recipient, then sends and receives text directly from the browser. A recipient is a phone number in international format or an `@username`; the client resolves it to the numeric chat ID the gateway uses.
 
 The product is a local/manual test prototype, not a production messenger. It has no backend, no durable history, no attachments, and no credential storage.
 
@@ -30,7 +30,7 @@ A graphite setup rail and a quiet blue-gray conversation canvas make the single 
 
 - **Material:** graphite navigation, cool blue-gray canvas, white work surfaces, one Telegram-blue action color, hairline separators, and restrained soft elevation for the composer and floating controls.
 - **Component language:** compact rows, rounded rectangular controls, low-contrast metadata, and message bubbles with a clear direction and status line. No glass, glow, gradients, or decorative texture.
-- **Typography:** system sans for the interface; system monospace only for instance IDs, chat IDs, and transport metadata.
+- **Typography:** system sans for the interface; system monospace only for instance IDs, recipients, chat IDs, and transport metadata.
 - **Signature interaction:** the connection state is always visible in the rail, the thread header, and the composer affordance; the thread never pretends to be live when it is only configured.
 - **Product boundary:** the browser credential warning is a visible setup footnote, not a hidden disclaimer.
 
@@ -117,7 +117,8 @@ Every interactive primitive has an accessible name, a visible `:focus-visible` r
 
 ### Setup
 
-- The operator must provide instance ID, API token, and Telegram chat ID.
+- The operator must provide instance ID, API token, and a recipient phone number or `@username`.
+- A recipient that cannot be resolved to a chat ID fails before the receive loop starts, with a notice naming the cause; the client is never opened for an unresolved recipient.
 - Secrets remain in component memory only; never persist them in local storage, URL parameters, logs, or source.
 - Validation is inline and the empty state explains that the first receive request is the connection probe.
 - The rail warns that direct browser calls can fail because of CORS and exposes credentials to the page.
@@ -125,6 +126,7 @@ Every interactive primitive has an accessible name, a visible `:focus-visible` r
 ### Connecting
 
 - The primary setup action becomes `Connecting` and cannot be submitted twice.
+- The recipient is resolved first with `checkAccount`, and the client is created only once that returns a chat ID, so sends and the receive loop are keyed by the resolved ID.
 - The first `receiveNotification` request is the probe. An empty response after the five-second window is a successful listening state, not an error.
 - The timeline and composer show the connecting state without fake activity.
 
@@ -181,4 +183,4 @@ Every interactive primitive has an accessible name, a visible `:focus-visible` r
 
 The build is complete only when the rail, setup form, empty states, message states, send failure, receive failure, and CORS/network failure are reachable at 375/768/1280px; the primitives above are implemented rather than replaced by one-off markup; keyboard and reduced-motion behavior pass; typecheck, lint, unit tests, browser tests, and the production build pass; and this file reflects the shipped implementation rather than an aspirational mockup.
 
-FINISH: PASS. Typecheck, lint, 16 unit tests, 7 browser tests, and the production build are green. `e2e/chat-smoke.spec.ts` asserts keyboard-only connect, reduced-motion behavior, overflow-free layout at 375/768/1280px, and the send, protocol, and CORS/network failure notices at each of those widths.
+FINISH: PASS. Typecheck, lint, 23 unit tests, 7 browser tests, and the production build are green. `src/api/greenApi.test.ts` pins `checkAccount` resolution for a phone, an `@username`, an unresolvable recipient, an unauthorized instance, and the free-plan chat limit, and `src/hooks/useGreenApiChat.test.tsx` covers an unresolvable recipient and the per-recipient resolution cache. `e2e/chat-smoke.spec.ts` asserts keyboard-only connect, recipient resolution ahead of the first send, reduced-motion behavior, overflow-free layout at 375/768/1280px, and the send, protocol, and CORS/network failure notices at each of those widths.
