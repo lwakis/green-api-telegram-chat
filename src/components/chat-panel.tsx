@@ -12,7 +12,7 @@ import { MessageBubble } from "./message-bubble"
 type ChatPanelProps = {
   readonly phase: ChatPhase
   readonly instanceId: string
-  readonly chatId: string
+  readonly recipient: string
   readonly messages: readonly ChatMessage[]
   readonly error: GreenApiError | null
   readonly draft: string
@@ -32,7 +32,7 @@ type ChatPanelProps = {
 export function ChatPanel({
   phase,
   instanceId,
-  chatId,
+  recipient,
   messages,
   error,
   draft,
@@ -62,7 +62,7 @@ export function ChatPanel({
             <p className="eyebrow">Active thread</p>
             <h1>Telegram text conversation</h1>
             <p className="chat-header__meta">
-              <span className="mono">Chat {chatId || "—"}</span>
+              <span className="mono">Chat {recipient || "—"}</span>
               <span aria-hidden="true">·</span>
               <span>
                 {messages.length} {messages.length === 1 ? "message" : "messages"}

@@ -23,12 +23,14 @@ export function ConnectionSummary({
   phase,
   apiUrl,
   instanceId,
-  chatId,
+  recipient,
+  resolvedChatId,
 }: {
   readonly phase: ChatPhase
   readonly apiUrl: string
   readonly instanceId: string
-  readonly chatId: string
+  readonly recipient: string
+  readonly resolvedChatId: string | null
 }) {
   const copy = phaseCopy[phase]
 
@@ -49,7 +51,7 @@ export function ConnectionSummary({
         </span>
         <span className="active-thread__copy">
           <strong>Telegram text</strong>
-          <small>{chatId ? `Chat ${chatId}` : "No chat selected"}</small>
+          <small>{recipient ? `Chat ${recipient}` : "No recipient yet"}</small>
         </span>
         <span className="active-thread__count" role="status" aria-label="One active thread">
           1
@@ -59,7 +61,7 @@ export function ConnectionSummary({
       <div className="connection-summary__metadata">
         <MetadataRow label="Gateway" value={apiUrl ? formatGateway(apiUrl) : "Not configured"} />
         <MetadataRow label="Instance" value={instanceId || "Not configured"} />
-        <MetadataRow label="Chat ID" value={chatId || "Not configured"} />
+        <MetadataRow label="Chat ID" value={resolvedChatId ?? "Not resolved yet"} />
         <MetadataRow label="Receive" value="5 seconds" />
       </div>
     </section>
