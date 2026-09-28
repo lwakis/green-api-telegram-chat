@@ -11,7 +11,7 @@ type EmptyState = {
 const emptyStates: Record<ChatPhase, EmptyState> = {
   setup: {
     title: "Connect the text thread",
-    body: "Add the instance ID, API token, and Telegram chat ID. The first receive request checks the connection.",
+    body: "Add the instance ID, API token, and a recipient. GREEN-API resolves the recipient, then the first receive request checks the connection.",
     icon: PlugZap,
   },
   connecting: {
