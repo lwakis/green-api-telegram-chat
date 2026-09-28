@@ -10,6 +10,24 @@ Never commit credentials, hardcode them in source, or treat a static build as a 
 
 Direct browser requests also depend on CORS. If the browser blocks a request because of CORS, React cannot bypass that restriction. This prototype has no server-side proxy, alternative request transport, or CORS workaround.
 
+## Screenshots
+
+The setup form collects the API URL, instance ID, instance API token, and a recipient that GREEN-API resolves to a chat ID.
+
+![The setup form with the recipient field](docs/setup.png)
+
+The connected thread, showing an outgoing message that reached `Sent` and an incoming reply that was acknowledged.
+
+![The connected thread at 1280px](docs/thread-1280.png)
+
+The same thread at the two narrower widths the layout rules cover.
+
+| 768px | 375px |
+| --- | --- |
+| ![The connected thread at 768px](docs/thread-768.png) | ![The connected thread at 375px](docs/thread-375.png) |
+
+Screenshots are captured from the production build with mocked GREEN-API routes, so no live instance is used. Regenerate them after a UI change with `bun run build`, start `bun run preview --host 127.0.0.1`, then run `bun scripts/capture-screenshots.ts`. The dev server is not suitable: it injects a debug toolbar into every capture.
+
 ## Prerequisites
 
 - Bun 1.3.14 or a compatible newer Bun release
