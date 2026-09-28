@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
 import {
@@ -7,15 +7,28 @@ import {
   GreenApiError,
   type IncomingTextMessage,
   type NotificationId,
-  parseGreenApiCredentials,
+  parseConnectionInput,
+  type Recipient,
 } from "../api/greenApi"
-import { useGreenApiChat } from "./useGreenApiChat"
+import { type ChatIdResolver, useGreenApiChat } from "./useGreenApiChat"
 
-const credentials = parseGreenApiCredentials({
+const connectionInput = parseConnectionInput({
   apiUrl: "https://4100.api.green-api.com",
   instanceId: "123",
   apiTokenInstance: "token",
-  chatId: "987654321",
+  recipient: "79876543210",
+})
+
+const resolvedChatId = z.string().min(1).brand("ChatId").parse("10000000")
+
+const resolveCalls: Recipient[] = []
+const resolveChatId: ChatIdResolver = async (recipient) => {
+  resolveCalls.push(recipient)
+  return resolvedChatId
+}
+
+beforeEach(() => {
+  resolveCalls.length = 0
 })
 
 type Deferred<T> = {
@@ -42,7 +55,7 @@ const senderId = z.string().min(1).brand("SenderId").parse("987")
 function createIncomingMessage(): IncomingTextMessage {
   return {
     notificationId,
-    chatId: credentials.chatId,
+    chatId: resolvedChatId,
     senderId,
     text: "A reply from Telegram",
     timestamp: 1_700_000_000,
@@ -99,12 +112,14 @@ describe("useGreenApiChat", () => {
     const fixture = createClientFixture()
     fixture.queueReceive(Promise.resolve(null))
     fixture.queueReceive(new Promise<IncomingTextMessage | null>(() => {}))
-    const { result } = renderHook(() => useGreenApiChat({ createClient: () => fixture.client }))
+    const { result } = renderHook(() =>
+      useGreenApiChat({ createClient: () => fixture.client, resolveChatId }),
+    )
 
     expect(result.current.phase).toBe("setup")
 
     await act(async () => {
-      await result.current.connect(credentials)
+      await result.current.connect(connectionInput)
     })
 
     await waitFor(() => {
@@ -118,10 +133,12 @@ describe("useGreenApiChat", () => {
     const nextReceive = createDeferred<IncomingTextMessage | null>()
     fixture.queueReceive(Promise.resolve(createIncomingMessage()))
     fixture.queueReceive(nextReceive.promise)
-    const { result } = renderHook(() => useGreenApiChat({ createClient: () => fixture.client }))
+    const { result } = renderHook(() =>
+      useGreenApiChat({ createClient: () => fixture.client, resolveChatId }),
+    )
 
     await act(async () => {
-      await result.current.connect(credentials)
+      await result.current.connect(connectionInput)
     })
 
     await waitFor(() => {
@@ -140,10 +157,12 @@ describe("useGreenApiChat", () => {
     const fixture = createClientFixture()
     fixture.queueReceive(Promise.resolve(null))
     fixture.queueReceive(new Promise<IncomingTextMessage | null>(() => {}))
-    const { result } = renderHook(() => useGreenApiChat({ createClient: () => fixture.client }))
+    const { result } = renderHook(() =>
+      useGreenApiChat({ createClient: () => fixture.client, resolveChatId }),
+    )
 
     await act(async () => {
-      await result.current.connect(credentials)
+      await result.current.connect(connectionInput)
     })
 
     await act(async () => {
@@ -164,10 +183,12 @@ describe("useGreenApiChat", () => {
     fixture.queueReceive(Promise.resolve(null))
     fixture.queueReceive(new Promise<IncomingTextMessage | null>(() => {}))
     fixture.setSendError(new GreenApiError("network", "Direct browser request failed."))
-    const { result } = renderHook(() => useGreenApiChat({ createClient: () => fixture.client }))
+    const { result } = renderHook(() =>
+      useGreenApiChat({ createClient: () => fixture.client, resolveChatId }),
+    )
 
     await act(async () => {
-      await result.current.connect(credentials)
+      await result.current.connect(connectionInput)
     })
     await waitFor(() => {
       expect(result.current.phase).toBe("listening")
@@ -191,11 +212,11 @@ describe("useGreenApiChat", () => {
     const pendingReceive = createDeferred<IncomingTextMessage | null>()
     fixture.queueReceive(pendingReceive.promise)
     const { result, unmount } = renderHook(() =>
-      useGreenApiChat({ createClient: () => fixture.client }),
+      useGreenApiChat({ createClient: () => fixture.client, resolveChatId }),
     )
 
     await act(async () => {
-      await result.current.connect(credentials)
+      await result.current.connect(connectionInput)
     })
 
     expect(fixture.receiveCalls()).toBe(1)
@@ -219,14 +240,14 @@ describe("useGreenApiChat", () => {
       .fn<() => GreenApiClient>()
       .mockReturnValueOnce(firstFixture.client)
       .mockReturnValueOnce(secondFixture.client)
-    const { result } = renderHook(() => useGreenApiChat({ createClient }))
+    const { result } = renderHook(() => useGreenApiChat({ createClient, resolveChatId }))
 
     await act(async () => {
-      await result.current.connect(credentials)
+      await result.current.connect(connectionInput)
     })
     await act(async () => {
       result.current.disconnect()
-      await result.current.connect(credentials)
+      await result.current.connect(connectionInput)
     })
 
     await waitFor(() => {
@@ -234,5 +255,45 @@ describe("useGreenApiChat", () => {
     })
     expect(createClient).toHaveBeenCalledTimes(2)
     expect(secondFixture.receiveCalls()).toBe(2)
+  })
+
+  it("surfaces an unresolvable recipient without opening a client", async () => {
+    const fixture = createClientFixture()
+    const createClient = vi.fn<() => GreenApiClient>().mockReturnValue(fixture.client)
+    const failingResolver: ChatIdResolver = async () => {
+      throw new GreenApiError("validation", "Telegram account not found.")
+    }
+    const { result } = renderHook(() =>
+      useGreenApiChat({ createClient, resolveChatId: failingResolver }),
+    )
+
+    await act(async () => {
+      await result.current.connect(connectionInput)
+    })
+
+    expect(createClient).not.toHaveBeenCalled()
+    expect(result.current.phase).toBe("error")
+    expect(result.current.error).toMatchObject({ code: "validation" })
+    expect(result.current.chatId).toBeNull()
+  })
+
+  it("looks a recipient up once and reuses it across reconnects", async () => {
+    const fixture = createClientFixture()
+    fixture.queueReceive(new Promise<IncomingTextMessage | null>(() => {}))
+    fixture.queueReceive(new Promise<IncomingTextMessage | null>(() => {}))
+    const { result } = renderHook(() =>
+      useGreenApiChat({ createClient: () => fixture.client, resolveChatId }),
+    )
+
+    await act(async () => {
+      await result.current.connect(connectionInput)
+    })
+    await act(async () => {
+      result.current.disconnect()
+      await result.current.connect(connectionInput)
+    })
+
+    expect(resolveCalls).toEqual([connectionInput.recipient])
+    expect(result.current.chatId).toBe(resolvedChatId)
   })
 })

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
+  type ChatId,
   createGreenApiClient,
   type GreenApiClient,
+  type GreenApiConnection,
+  type GreenApiConnectionInput,
   type GreenApiCredentials,
   GreenApiError,
+  type Recipient,
+  resolveRecipientChatId,
 } from "../api/greenApi"
 import {
   type ChatMessage,
@@ -18,9 +23,14 @@ import {
 export type { ChatMessage, ChatPhase } from "./chatModel"
 
 export type ChatClientFactory = (credentials: GreenApiCredentials) => GreenApiClient
+export type ChatIdResolver = (
+  recipient: Recipient,
+  connection: GreenApiConnection,
+) => Promise<ChatId>
 
 type UseGreenApiChatOptions = {
   readonly createClient?: ChatClientFactory
+  readonly resolveChatId?: ChatIdResolver
   readonly now?: () => number
 }
 
@@ -28,7 +38,8 @@ type UseGreenApiChatResult = {
   readonly phase: ChatPhase
   readonly messages: readonly ChatMessage[]
   readonly error: GreenApiError | null
-  readonly connect: (credentials: GreenApiCredentials) => void
+  readonly chatId: ChatId | null
+  readonly connect: (input: GreenApiConnectionInput) => Promise<void>
   readonly disconnect: () => void
   readonly sendText: (text: string) => Promise<boolean>
   readonly retryMessage: (messageId: string) => Promise<boolean>
@@ -39,11 +50,16 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
   const [phase, setPhase] = useState<ChatPhase>("setup")
   const [messages, setMessages] = useState<readonly ChatMessage[]>([])
   const [error, setError] = useState<GreenApiError | null>(null)
+  const [chatId, setChatId] = useState<ChatId | null>(null)
   const clientRef = useRef<GreenApiClient | null>(null)
   const operationRef = useRef(0)
   const mountedRef = useRef(false)
+  const resolvedRef = useRef<{ readonly recipient: Recipient; readonly chatId: ChatId } | null>(
+    null,
+  )
 
   const createClient = options.createClient ?? createGreenApiClient
+  const resolveChatId = options.resolveChatId ?? resolveRecipientChatId
   const now = options.now ?? Date.now
 
   const isCurrentOperation = useCallback(
@@ -83,13 +99,42 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
   )
 
   const connect = useCallback(
-    (credentials: GreenApiCredentials): void => {
+    async (input: GreenApiConnectionInput): Promise<void> => {
       operationRef.current += 1
       const operationId = operationRef.current
+      const { recipient, ...connection } = input
+      setPhase("connecting")
+
+      // Telegram rate-limits repeated lookups of numbers it cannot resolve, so a recipient is looked
+      // up once and the result reused for reconnects to the same chat.
+      const cached = resolvedRef.current
+      let resolvedChatId: ChatId
+
+      if (cached !== null && cached.recipient === recipient) {
+        resolvedChatId = cached.chatId
+      } else {
+        try {
+          resolvedChatId = await resolveChatId(recipient, connection)
+        } catch (resolveError) {
+          if (isCurrentOperation(operationId)) {
+            setError(normalizeChatError(resolveError))
+            setPhase("error")
+          }
+          return
+        }
+      }
+
+      if (!isCurrentOperation(operationId)) {
+        return
+      }
+
+      resolvedRef.current = { recipient, chatId: resolvedChatId }
+      setChatId(resolvedChatId)
+
       let client: GreenApiClient
 
       try {
-        client = createClient(credentials)
+        client = createClient({ ...connection, chatId: resolvedChatId })
       } catch (createError) {
         if (isCurrentOperation(operationId)) {
           setError(normalizeChatError(createError))
@@ -101,15 +146,15 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
       clientRef.current = client
       setMessages([])
       setError(null)
-      setPhase("connecting")
       void receiveLoop(client, operationId)
     },
-    [createClient, isCurrentOperation, receiveLoop],
+    [createClient, isCurrentOperation, receiveLoop, resolveChatId],
   )
 
   const disconnect = useCallback((): void => {
     operationRef.current += 1
     clientRef.current = null
+    setChatId(null)
     setError(null)
     setPhase("setup")
   }, [])
@@ -204,6 +249,7 @@ export function useGreenApiChat(options: UseGreenApiChatOptions = {}): UseGreenA
     phase,
     messages,
     error,
+    chatId,
     connect,
     disconnect,
     sendText,
