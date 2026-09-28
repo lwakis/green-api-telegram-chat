@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 
-import { GreenApiError, parseGreenApiCredentials } from "./api/greenApi"
+import { GreenApiError, parseConnectionInput } from "./api/greenApi"
 import { AppFrame, ChatPanel } from "./components/chat"
 import { ConnectionPanel } from "./components/connection-panel"
 import { useGreenApiChat } from "./hooks/useGreenApiChat"
 
-type SetupField = "apiUrl" | "instanceId" | "apiTokenInstance" | "chatId"
+type SetupField = "apiUrl" | "instanceId" | "apiTokenInstance" | "recipient"
 
 type FormSubmitEvent = { preventDefault: () => void }
 
@@ -19,14 +19,23 @@ export function App() {
   const [apiUrl, setApiUrl] = useState("")
   const [instanceId, setInstanceId] = useState("")
   const [apiTokenInstance, setApiTokenInstance] = useState("")
-  const [chatId, setChatId] = useState("")
+  const [recipient, setRecipient] = useState("")
   const [draft, setDraft] = useState("")
   const [setupError, setSetupError] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [atBottom, setAtBottom] = useState(true)
   const timelineRef = useRef<HTMLDivElement>(null)
-  const { phase, messages, error, connect, disconnect, sendText, retryMessage, clearError } =
-    useGreenApiChat()
+  const {
+    phase,
+    messages,
+    error,
+    chatId,
+    connect,
+    disconnect,
+    sendText,
+    retryMessage,
+    clearError,
+  } = useGreenApiChat()
 
   const isConnected = phase === "listening"
   const formLocked = phase === "connecting" || phase === "listening"
@@ -53,17 +62,17 @@ export function App() {
     } else if (field === "apiTokenInstance") {
       setApiTokenInstance(value)
     } else {
-      setChatId(value)
+      setRecipient(value)
     }
 
     setSetupError(null)
   }
 
-  function connectWithCurrentCredentials(): void {
+  async function connectWithCurrentRecipient(): Promise<void> {
     try {
-      const credentials = parseGreenApiCredentials({ apiUrl, instanceId, apiTokenInstance, chatId })
+      const input = parseConnectionInput({ apiUrl, instanceId, apiTokenInstance, recipient })
       setSetupError(null)
-      connect(credentials)
+      await connect(input)
     } catch (caughtError) {
       setSetupError(
         caughtError instanceof GreenApiError
@@ -75,7 +84,7 @@ export function App() {
 
   function handleConnect(event: FormSubmitEvent): void {
     event.preventDefault()
-    connectWithCurrentCredentials()
+    void connectWithCurrentRecipient()
   }
 
   function handleDisconnect(): void {
@@ -125,18 +134,18 @@ export function App() {
       <ConnectionPanel
         apiUrl={apiUrl}
         apiTokenInstance={apiTokenInstance}
-        chatId={chatId}
         formLocked={formLocked}
         instanceId={instanceId}
         onConnect={handleConnect}
         onDismissSetupError={() => setSetupError(null)}
         onFieldChange={updateField}
         phase={phase}
+        recipient={recipient}
+        resolvedChatId={chatId}
         setupError={setupError}
       />
       <ChatPanel
         atBottom={atBottom}
-        chatId={chatId}
         draft={draft}
         error={error}
         instanceId={instanceId}
@@ -145,11 +154,12 @@ export function App() {
         onDismissError={clearError}
         onDraftChange={setDraft}
         onJumpToLatest={jumpToLatest}
-        onRetryConnection={connectWithCurrentCredentials}
+        onRetryConnection={() => void connectWithCurrentRecipient()}
         onRetryMessage={(messageId) => void retryMessage(messageId)}
         onSend={handleSend}
         onTimelineScroll={handleTimelineScroll}
         phase={phase}
+        recipient={recipient}
         sending={sending}
         timelineRef={timelineRef}
       />
