@@ -22,11 +22,30 @@ const chatIdSchema = z
 const notificationIdSchema = z.string().trim().min(1).brand("NotificationId")
 const senderIdSchema = z.string().trim().min(1).brand("SenderId")
 
+// Telegram privacy settings can hide a number from lookups, so an @username is accepted too.
+const USERNAME_PATTERN = /^@[A-Za-z0-9_]{4,32}$/
+const PHONE_PATTERN = /^\d{5,15}$/
+
+const recipientSchema = z
+  .string()
+  .trim()
+  .refine((value) => USERNAME_PATTERN.test(value) || PHONE_PATTERN.test(value.replace(/^\+/, "")), {
+    message: "Enter a phone number in international format or an @username",
+  })
+  .brand("Recipient")
+
 const credentialsInputSchema = z.object({
   apiUrl: apiUrlSchema,
   instanceId: instanceIdSchema,
   apiTokenInstance: apiTokenSchema,
   chatId: chatIdSchema,
+})
+
+const connectionInputSchema = z.object({
+  apiUrl: apiUrlSchema,
+  instanceId: instanceIdSchema,
+  apiTokenInstance: apiTokenSchema,
+  recipient: recipientSchema,
 })
 
 const scalarIdSchema = z.union([z.string(), z.number()]).transform((value) => String(value))
@@ -37,6 +56,13 @@ const sendResponseSchema = z.looseObject({
 
 const deleteResponseSchema = z.looseObject({
   result: z.literal(true),
+})
+
+// All three fields are optional, and which ones are present is what selects the error path below.
+const checkAccountResponseSchema = z.looseObject({
+  status: z.boolean().optional(),
+  exist: z.boolean().optional(),
+  chatId: scalarIdSchema.nullish(),
 })
 
 const notificationEnvelopeSchema = z.looseObject({
@@ -65,7 +91,14 @@ const notificationEnvelopeSchema = z.looseObject({
 
 type NotificationEnvelope = z.infer<typeof notificationEnvelopeSchema>
 export type GreenApiCredentials = z.infer<typeof credentialsInputSchema>
+export type GreenApiConnectionInput = z.infer<typeof connectionInputSchema>
 export type NotificationId = z.infer<typeof notificationIdSchema>
+export type Recipient = z.infer<typeof recipientSchema>
+export type ChatId = z.infer<typeof chatIdSchema>
+export type GreenApiConnection = Pick<
+  GreenApiCredentials,
+  "apiUrl" | "instanceId" | "apiTokenInstance"
+>
 
 export type IncomingTextMessage = {
   readonly notificationId: NotificationId
@@ -108,6 +141,152 @@ export function parseGreenApiCredentials(input: unknown): GreenApiCredentials {
   return result.data
 }
 
+export function parseConnectionInput(input: unknown): GreenApiConnectionInput {
+  const result = connectionInputSchema.safeParse(input)
+
+  if (!result.success) {
+    throw new GreenApiError(
+      "config",
+      "Enter a GREEN-API API URL, instance ID, API token, and a recipient phone number or @username.",
+    )
+  }
+
+  return result.data
+}
+
+function buildEndpoint(connection: GreenApiConnection, action: string, suffix?: string): string {
+  const base = `${connection.apiUrl}/waInstance${encodeURIComponent(connection.instanceId)}/${action}/${encodeURIComponent(connection.apiTokenInstance)}`
+
+  return suffix === undefined ? base : `${base}/${suffix}`
+}
+
+function apiError(status: number): GreenApiError {
+  if (status === 466) {
+    return new GreenApiError(
+      "api",
+      "The free GREEN-API plan allows only three active chats. Reuse a chat or raise the plan limit.",
+      status,
+    )
+  }
+
+  const code = status === 401 || status === 403 ? "auth" : "api"
+
+  return new GreenApiError(code, `GREEN-API request failed with status ${status}.`, status)
+}
+
+async function performRequest(
+  http: ReturnType<typeof ky.create>,
+  url: string,
+  options: Options = {},
+): Promise<Response> {
+  try {
+    const response = await http(url, { ...options, retry: 0 })
+
+    if (response.ok) {
+      return response
+    }
+
+    throw apiError(response.status)
+  } catch (error) {
+    if (error instanceof GreenApiError) {
+      throw error
+    }
+
+    if (error instanceof HTTPError) {
+      throw apiError(error.response.status)
+    }
+
+    throw new GreenApiError(
+      "network",
+      "The direct browser request to GREEN-API failed. Check the network and CORS policy.",
+    )
+  }
+}
+
+async function readResponseText(response: Response): Promise<string> {
+  try {
+    return await response.text()
+  } catch {
+    throw new GreenApiError("network", "GREEN-API returned a response that could not be read.")
+  }
+}
+
+function protocolError(): GreenApiError {
+  return new GreenApiError("protocol", "GREEN-API returned an unexpected notification payload.")
+}
+
+function checkAccountProtocolError(): GreenApiError {
+  return new GreenApiError("protocol", "GREEN-API returned an unexpected checkAccount response.")
+}
+
+function parseJson(responseText: string): unknown {
+  try {
+    return JSON.parse(responseText) as unknown
+  } catch {
+    throw protocolError()
+  }
+}
+
+async function parseJsonResponse(response: Response): Promise<unknown> {
+  const responseText = await readResponseText(response)
+
+  if (responseText.trim() === "") {
+    throw protocolError()
+  }
+
+  return parseJson(responseText)
+}
+
+// The API wants a bare international number, so a leading + is dropped and the rest sent as a number.
+function toCheckAccountPhoneNumber(recipient: string): number | string {
+  if (USERNAME_PATTERN.test(recipient)) {
+    return recipient
+  }
+
+  return Number(recipient.replace(/^\+/, ""))
+}
+
+export async function resolveRecipientChatId(
+  recipient: Recipient,
+  connection: GreenApiConnection,
+  http: ReturnType<typeof ky.create> = ky.create({ timeout: 15_000 }),
+): Promise<ChatId> {
+  const response = await performRequest(http, buildEndpoint(connection, "checkAccount"), {
+    method: "POST",
+    json: { phoneNumber: toCheckAccountPhoneNumber(recipient) },
+  })
+  const result = checkAccountResponseSchema.safeParse(await parseJsonResponse(response))
+
+  if (!result.success) {
+    throw checkAccountProtocolError()
+  }
+
+  const { status, exist, chatId } = result.data
+
+  if (status === false) {
+    throw new GreenApiError(
+      "config",
+      "The GREEN-API instance is not authorized yet. Check its status in the console, then reconnect.",
+    )
+  }
+
+  if (exist === false) {
+    throw new GreenApiError("validation", "Telegram account not found. Try an @username instead.")
+  }
+
+  if (exist !== true) {
+    throw checkAccountProtocolError()
+  }
+
+  const resolved = chatIdSchema.safeParse(chatId)
+
+  if (!resolved.success) {
+    throw checkAccountProtocolError()
+  }
+
+  return resolved.data
+}
+
 class HttpGreenApiClient implements GreenApiClient {
   constructor(
     private readonly credentials: GreenApiCredentials,
@@ -115,35 +294,36 @@ class HttpGreenApiClient implements GreenApiClient {
   ) {}
 
   async sendText(text: string): Promise<void> {
-    const response = await this.request(this.endpoint("sendMessage"), {
+    const response = await performRequest(this.http, this.endpoint("sendMessage"), {
       method: "POST",
       json: {
         chatId: this.credentials.chatId,
         message: text,
       },
     })
-    const result = sendResponseSchema.safeParse(await this.parseJsonResponse(response))
+    const result = sendResponseSchema.safeParse(await parseJsonResponse(response))
 
     if (!result.success) {
-      throw this.protocolError()
+      throw protocolError()
     }
   }
 
   async receiveText(): Promise<IncomingTextMessage | null> {
-    const response = await this.request(
+    const response = await performRequest(
+      this.http,
       `${this.endpoint("receiveNotification")}?receiveTimeout=${receiveTimeoutSeconds}`,
     )
-    const responseText = await this.readResponseText(response)
+    const responseText = await readResponseText(response)
 
     if (responseText.trim() === "") {
       return null
     }
 
-    const payload = this.parseJson(responseText)
+    const payload = parseJson(responseText)
     const result = notificationEnvelopeSchema.safeParse(payload)
 
     if (!result.success) {
-      throw this.protocolError()
+      throw protocolError()
     }
 
     const incomingMessage = this.normalizeIncomingText(result.data)
@@ -152,79 +332,20 @@ class HttpGreenApiClient implements GreenApiClient {
   }
 
   async deleteNotification(notificationId: NotificationId): Promise<void> {
-    const response = await this.request(
+    const response = await performRequest(
+      this.http,
       this.endpoint("deleteNotification", encodeURIComponent(notificationId)),
       { method: "DELETE" },
     )
-    const result = deleteResponseSchema.safeParse(await this.parseJsonResponse(response))
+    const result = deleteResponseSchema.safeParse(await parseJsonResponse(response))
 
     if (!result.success) {
-      throw this.protocolError()
+      throw protocolError()
     }
   }
 
   private endpoint(action: string, suffix?: string): string {
-    const base = `${this.credentials.apiUrl}/waInstance${encodeURIComponent(this.credentials.instanceId)}/${action}/${encodeURIComponent(this.credentials.apiTokenInstance)}`
-    return suffix === undefined ? base : `${base}/${suffix}`
-  }
-
-  private async request(url: string, options: Options = {}): Promise<Response> {
-    try {
-      const response = await this.http(url, { ...options, retry: 0 })
-
-      if (response.ok) {
-        return response
-      }
-
-      const code = response.status === 401 || response.status === 403 ? "auth" : "api"
-      throw new GreenApiError(
-        code,
-        `GREEN-API request failed with status ${response.status}.`,
-        response.status,
-      )
-    } catch (error) {
-      if (error instanceof GreenApiError) {
-        throw error
-      }
-
-      if (error instanceof HTTPError) {
-        const { status } = error.response
-        const code = status === 401 || status === 403 ? "auth" : "api"
-        throw new GreenApiError(code, `GREEN-API request failed with status ${status}.`, status)
-      }
-
-      throw new GreenApiError(
-        "network",
-        "The direct browser request to GREEN-API failed. Check the network and CORS policy.",
-      )
-    }
-  }
-
-  private async readResponseText(response: Response): Promise<string> {
-    try {
-      return await response.text()
-    } catch {
-      throw new GreenApiError("network", "GREEN-API returned a response that could not be read.")
-    }
-  }
-
-  private parseJson(responseText: string): unknown {
-    try {
-      const payload: unknown = JSON.parse(responseText)
-      return payload
-    } catch {
-      throw this.protocolError()
-    }
-  }
-
-  private async parseJsonResponse(response: Response): Promise<unknown> {
-    const responseText = await this.readResponseText(response)
-
-    if (responseText.trim() === "") {
-      throw this.protocolError()
-    }
-
-    return this.parseJson(responseText)
+    return buildEndpoint(this.credentials, action, suffix)
   }
 
   private normalizeIncomingText(notification: NotificationEnvelope): IncomingTextMessage | null {
@@ -246,7 +367,7 @@ class HttpGreenApiClient implements GreenApiClient {
       body.senderData?.chatId === undefined ||
       body.senderData.sender === undefined
     ) {
-      throw this.protocolError()
+      throw protocolError()
     }
 
     return {
@@ -256,10 +377,6 @@ class HttpGreenApiClient implements GreenApiClient {
       text,
       timestamp: body.timestamp,
     }
-  }
-
-  private protocolError(): GreenApiError {
-    return new GreenApiError("protocol", "GREEN-API returned an unexpected notification payload.")
   }
 }
 

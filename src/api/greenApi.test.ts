@@ -2,7 +2,12 @@ import ky from "ky"
 import { describe, expect, it } from "vitest"
 import { z } from "zod"
 
-import { createGreenApiClient, parseGreenApiCredentials } from "./greenApi"
+import {
+  createGreenApiClient,
+  parseConnectionInput,
+  parseGreenApiCredentials,
+  resolveRecipientChatId,
+} from "./greenApi"
 
 type FetchCall = {
   readonly request: Request
@@ -226,5 +231,89 @@ describe("GREEN-API client", () => {
       name: "GreenApiError",
       code: "protocol",
     })
+  })
+})
+
+describe("checkAccount recipient lookup", () => {
+  it("resolves a phone number to a chat ID with the credentials in the path", async () => {
+    const fixture = createHttpFixture([
+      jsonResponse({ exist: true, chatId: "10000000", fromCache: true }),
+    ])
+    const input = parseConnectionInput({
+      apiUrl: "https://4100.api.green-api.com",
+      instanceId: "123",
+      apiTokenInstance: "token",
+      recipient: "+79876543210",
+    })
+
+    await expect(resolveRecipientChatId(input.recipient, input, fixture.http)).resolves.toBe(
+      "10000000",
+    )
+
+    const request = fixture.calls[0]?.request
+    expect(request?.method).toBe("POST")
+    expect(request?.url).toBe("https://4100.api.green-api.com/waInstance123/checkAccount/token")
+    expect(await request?.json()).toEqual({ phoneNumber: 79876543210 })
+  })
+
+  it("sends an @username through unchanged", async () => {
+    const fixture = createHttpFixture([jsonResponse({ exist: true, chatId: "10000000" })])
+    const input = parseConnectionInput({
+      apiUrl: "https://4100.api.green-api.com",
+      instanceId: "123",
+      apiTokenInstance: "token",
+      recipient: "@username",
+    })
+
+    await expect(resolveRecipientChatId(input.recipient, input, fixture.http)).resolves.toBe(
+      "10000000",
+    )
+    expect(await fixture.calls[0]?.request.json()).toEqual({ phoneNumber: "@username" })
+  })
+
+  it("reports a recipient Telegram cannot resolve as a validation error", async () => {
+    const fixture = createHttpFixture([jsonResponse({ exist: false, chatId: "" })])
+    const input = parseConnectionInput({
+      apiUrl: "https://4100.api.green-api.com",
+      instanceId: "123",
+      apiTokenInstance: "token",
+      recipient: "79876543210",
+    })
+
+    await expect(
+      resolveRecipientChatId(input.recipient, input, fixture.http),
+    ).rejects.toMatchObject({
+      name: "GreenApiError",
+      code: "validation",
+      message: "Telegram account not found. Try an @username instead.",
+    })
+  })
+
+  it("reports an unauthorized instance as a configuration error", async () => {
+    const fixture = createHttpFixture([jsonResponse({ status: false })])
+    const input = parseConnectionInput({
+      apiUrl: "https://4100.api.green-api.com",
+      instanceId: "123",
+      apiTokenInstance: "token",
+      recipient: "79876543210",
+    })
+
+    await expect(
+      resolveRecipientChatId(input.recipient, input, fixture.http),
+    ).rejects.toMatchObject({ code: "config" })
+  })
+
+  it("explains the free plan chat limit instead of printing a bare status", async () => {
+    const fixture = createHttpFixture([jsonResponse({}, 466)])
+    const input = parseConnectionInput({
+      apiUrl: "https://4100.api.green-api.com",
+      instanceId: "123",
+      apiTokenInstance: "token",
+      recipient: "79876543210",
+    })
+
+    await expect(
+      resolveRecipientChatId(input.recipient, input, fixture.http),
+    ).rejects.toMatchObject({ code: "api", status: 466 })
   })
 })
