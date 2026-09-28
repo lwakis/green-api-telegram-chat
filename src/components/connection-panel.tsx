@@ -9,11 +9,12 @@ type ConnectionPanelProps = {
   readonly apiUrl: string
   readonly instanceId: string
   readonly apiTokenInstance: string
-  readonly chatId: string
+  readonly recipient: string
+  readonly resolvedChatId: string | null
   readonly setupError: string | null
   readonly formLocked: boolean
   readonly onFieldChange: (
-    field: "apiUrl" | "instanceId" | "apiTokenInstance" | "chatId",
+    field: "apiUrl" | "instanceId" | "apiTokenInstance" | "recipient",
     value: string,
   ) => void
   readonly onConnect: (event: FormSubmitEvent) => void
@@ -25,7 +26,8 @@ export function ConnectionPanel({
   apiUrl,
   instanceId,
   apiTokenInstance,
-  chatId,
+  recipient,
+  resolvedChatId,
   setupError,
   formLocked,
   onFieldChange,
@@ -45,17 +47,23 @@ export function ConnectionPanel({
       </header>
 
       <div className="connection-panel__content">
-        <ConnectionSummary apiUrl={apiUrl} phase={phase} instanceId={instanceId} chatId={chatId} />
+        <ConnectionSummary
+          apiUrl={apiUrl}
+          instanceId={instanceId}
+          phase={phase}
+          recipient={recipient}
+          resolvedChatId={resolvedChatId}
+        />
         <SetupForm
           apiUrl={apiUrl}
           apiTokenInstance={apiTokenInstance}
-          chatId={chatId}
           formLocked={formLocked}
           instanceId={instanceId}
           onConnect={onConnect}
           onDismissError={onDismissSetupError}
           onFieldChange={onFieldChange}
           phase={phase}
+          recipient={recipient}
           setupError={setupError}
         />
       </div>

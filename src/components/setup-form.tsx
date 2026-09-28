@@ -3,14 +3,14 @@ import type { ChatPhase } from "../hooks/useGreenApiChat"
 import { Button, Notice, SecretField, TextField } from "./controls"
 import type { FormSubmitEvent } from "./form-event"
 
-type SetupField = "apiUrl" | "instanceId" | "apiTokenInstance" | "chatId"
+type SetupField = "apiUrl" | "instanceId" | "apiTokenInstance" | "recipient"
 
 type SetupFormProps = {
   readonly phase: ChatPhase
   readonly apiUrl: string
   readonly instanceId: string
   readonly apiTokenInstance: string
-  readonly chatId: string
+  readonly recipient: string
   readonly formLocked: boolean
   readonly setupError: string | null
   readonly onFieldChange: (field: SetupField, value: string) => void
@@ -23,7 +23,7 @@ export function SetupForm({
   apiUrl,
   instanceId,
   apiTokenInstance,
-  chatId,
+  recipient,
   formLocked,
   setupError,
   onFieldChange,
@@ -78,13 +78,13 @@ export function SetupForm({
       <TextField
         autoComplete="off"
         disabled={formLocked}
-        hint="The recipient chat, group, or channel identifier."
-        id="chat-id"
-        inputMode="numeric"
-        label="Telegram chat ID"
-        onChange={(event) => onFieldChange("chatId", event.target.value)}
-        placeholder="1234567890"
-        value={chatId}
+        hint="International format, with or without a leading +; an @username also works for numbers hidden by privacy settings."
+        id="recipient"
+        inputMode="tel"
+        label="Recipient"
+        onChange={(event) => onFieldChange("recipient", event.target.value)}
+        placeholder="79876543210 or @username"
+        value={recipient}
       />
 
       {setupError !== null ? (
