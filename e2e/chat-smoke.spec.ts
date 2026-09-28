@@ -3,6 +3,7 @@ import { expect, type Locator, type Page, test } from "@playwright/test"
 const API_URL = "https://green-api.test"
 const INSTANCE_ID = "1100"
 const API_TOKEN = "test-token"
+const RECIPIENT = "79876543210"
 const CHAT_ID = "123456789"
 const RECEIPT_ID = "456"
 const BASE = `${API_URL}/waInstance${INSTANCE_ID}`
@@ -89,13 +90,27 @@ const SETUP_FIELD_VALUES: Readonly<Record<string, string>> = {
   "api-url": API_URL,
   "instance-id": INSTANCE_ID,
   "api-token": API_TOKEN,
-  "chat-id": CHAT_ID,
+  recipient: RECIPIENT,
 }
 
 async function installMocks(page: Page, mode: FailureMode = "none"): Promise<Mocks> {
   let receiveCount = 0
   let deliverIncoming = false
   const acknowledged: string[] = []
+
+  await page.route(`${BASE}/checkAccount/${API_TOKEN}`, async (route) => {
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 204, headers: preflightHeaders })
+      return
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: corsHeaders,
+      body: JSON.stringify({ exist: true, chatId: CHAT_ID, fromCache: true }),
+    })
+  })
 
   await page.route(`${BASE}/sendMessage/${API_TOKEN}`, async (route) => {
     if (route.request().method() === "OPTIONS") {
@@ -195,7 +210,7 @@ async function fillSetupForm(page: Page): Promise<void> {
   await setupForm.getByLabel("API URL").fill(API_URL)
   await setupForm.getByLabel("Instance ID").fill(INSTANCE_ID)
   await setupForm.getByLabel("Instance API token", { exact: true }).fill(API_TOKEN)
-  await setupForm.getByLabel("Telegram chat ID").fill(CHAT_ID)
+  await setupForm.getByLabel("Recipient").fill(RECIPIENT)
 
   await page.getByRole("button", { name: "Connect instance" }).click()
 }
@@ -358,7 +373,7 @@ test("connects and sends a message with the keyboard alone", async ({ page }) =>
     "input#instance-id (text)",
     "input#api-token (password)",
     'button (button) "Reveal Instance API token"',
-    "input#chat-id (text)",
+    "input#recipient (text)",
     'button (submit) "Connect instance"',
   ])
 
