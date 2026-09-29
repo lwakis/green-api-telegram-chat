@@ -10,6 +10,18 @@ Never commit credentials, hardcode them in source, or treat a static build as a 
 
 Direct browser requests also depend on CORS. If the browser blocks a request because of CORS, React cannot bypass that restriction. This prototype has no server-side proxy, alternative request transport, or CORS workaround.
 
+## Quick start
+
+```bash
+bun install
+bunx playwright install chromium
+bun run dev
+```
+
+`bun run dev` serves the app on `http://127.0.0.1:5173`. Open that URL and fill in the setup form with the API URL, instance ID, instance API token, and recipient. [Prerequisites](#prerequisites) explains what each value must look like, and [Manual verification](#manual-verification) is the full end-to-end check.
+
+The `playwright install` step downloads the Chromium build used by `bun run test:e2e` and by the screenshot capture script. Skipping it leaves the development server, the unit tests, and the production build working.
+
 ## Screenshots
 
 The setup form collects the API URL, instance ID, instance API token, and a recipient that GREEN-API resolves to a chat ID.
@@ -26,15 +38,15 @@ The same thread at the two narrower widths the layout rules cover.
 | --- | --- |
 | ![The connected thread at 768px](docs/thread-768.png) | ![The connected thread at 375px](docs/thread-375.png) |
 
-Screenshots are captured from the production build with mocked GREEN-API routes, so no live instance is used. Regenerate them after a UI change with `bun run build`, start `bun run preview --host 127.0.0.1`, then run `bun scripts/capture-screenshots.ts`. The dev server is not suitable: it injects a debug toolbar into every capture.
+Screenshots are captured from the production build with mocked GREEN-API routes, so no live instance is used. Regenerate them after a UI change with `bun run build`, start `bun run preview --host 127.0.0.1 --port 4173`, then run `bun scripts/capture-screenshots.ts`. The dev server is not suitable: it injects a debug toolbar into every capture.
 
 ## Prerequisites
 
 - Bun 1.3.14 or a compatible newer Bun release
 - A GREEN-API Telegram account and an active Telegram instance
-- The account-specific `apiUrl` shown in the GREEN-API console, for example `https://4100.api.green-api.com`
+- The account-specific `apiUrl` shown in the GREEN-API console, for example `https://4100.api.green-api.com`. It must start with `https://`; a plain `http://` value is rejected before any request is sent
 - The instance ID and instance API token
-- A Telegram recipient the instance is allowed to message: a phone number in international format without `+` or punctuation, or an `@username` for accounts hidden by privacy settings
+- A Telegram recipient the instance is allowed to message: a phone number in international format, digits only, with an optional leading `+` that the client strips, or an `@username` for accounts hidden by privacy settings
 - A browser and network connection that permit direct HTTPS requests to the configured GREEN-API host
 
 Bun is the runtime and package manager for this project. Node and pnpm are not required.
@@ -53,7 +65,7 @@ bun run build
 bun run preview
 ```
 
-Use `bun run dev` to start the local development server, `bun run test` to run the unit tests, `bun run test:e2e` to run the Playwright browser test, `bun run typecheck` to run TypeScript without emitting files, `bun run lint` to run Biome checks, and `bun run build` to create a production build.
+Use `bun run dev` to start the local development server, `bun run test` to run the unit tests, `bun run test:e2e` to run the Playwright browser test, `bun run typecheck` to run TypeScript without emitting files, `bun run lint` to run Biome checks, `bun run build` to create a production build, and `bun run preview` to serve that build locally on `127.0.0.1:4173`.
 
 `bun run test:e2e` needs a Chromium build that matches the installed Playwright version. Run `bunx playwright install chromium` once after installing dependencies, and again whenever Playwright is upgraded. The command starts its own development server on `127.0.0.1:5173` and drives the app in a real browser with mocked GREEN-API routes, so it never contacts a live instance.
 
@@ -122,12 +134,14 @@ The client follows this order:
 
 6. Poll `receiveNotification` again. An empty response during the wait is normal and means that no notification arrived during that interval.
 
-The recipient is what the user types, and the client resolves it to the numeric chat ID the Telegram gateway uses. A phone number must be in international format without `+` or punctuation, so `79876543210` is accepted and `+7 (987) 654-32-10` is not. An `@username` is passed to `checkAccount` unchanged, which is the way to reach an account hidden by privacy settings. WhatsApp-style identifiers such as `987@c.us` are rejected by the client.
+The recipient is what the user types, and the client resolves it to the numeric chat ID the Telegram gateway uses. A phone number must be digits only, so `79876543210` and `+79876543210` are both accepted — a leading `+` is stripped before the number is sent — while `+7 (987) 654-32-10` is not, because spaces, parentheses, and dashes are rejected. An `@username` is passed to `checkAccount` unchanged, which is the way to reach an account hidden by privacy settings. WhatsApp-style identifiers such as `987@c.us` are rejected by the client.
+
+A request that fails with HTTP 466 is reported as a plan limit rather than a generic failure: the free GREEN-API plan allows only three active chats, so the chat has to be reused or the plan raised.
 
 ## Manual verification
 
 1. Run `bun install`, then `bun run dev`.
-2. Open the local URL printed by the development server.
+2. Open `http://127.0.0.1:5173`, the URL the development server prints.
 3. Enter the GREEN-API console `apiUrl`, instance ID, instance API token, and a recipient at runtime. Do not put credentials in source files.
 4. Send a short text message and confirm in the browser network panel that the request is `POST .../checkAccount/...` for the recipient first, then `POST .../sendMessage/...` sending `chatId` plus `message` in the JSON body.
 5. Confirm that the recipient receives the message, then send a text reply from another Telegram client.
@@ -150,7 +164,7 @@ The recipient is what the user types, and the client resolves it to the numeric 
 
 - [GREEN-API Telegram documentation](https://green-api.com/telegram/docs/)
 - [Request format](https://green-api.com/telegram/docs/request-format/)
-- [Checking an account](https://green-api.com/telegram/docs/api/account/CheckAccount/)
+- [Checking an account](https://green-api.com/telegram/docs/api/service/CheckAccount/)
 - [Sending messages](https://green-api.com/telegram/docs/api/sending/SendMessage/)
 - [Receiving notifications](https://green-api.com/telegram/docs/api/receiving/technology-http-api/ReceiveNotification/)
 - [Deleting notifications](https://green-api.com/telegram/docs/api/receiving/technology-http-api/DeleteNotification/)
