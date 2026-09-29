@@ -95,6 +95,8 @@ The client follows this order:
 
    A successful response includes `exist: true` and the numeric `chatId` to send to. `exist: false` means Telegram cannot resolve the recipient, and `status: false` means the instance token is not authorized for the method.
 
+   The resolved `chatId` is cached for the page session, because Telegram rate-limits repeated lookups of numbers it cannot resolve. Reconnecting to the same recipient therefore sends no second `checkAccount` request; change the recipient in the setup form to force a fresh lookup.
+
 2. Send `POST sendMessage` with a JSON body:
 
    ```json
@@ -154,9 +156,9 @@ A request that fails with HTTP 466 is reported as a plan limit rather than a gen
 
 - Text messages only. Only `incomingMessageReceived` notifications whose `messageData.typeMessage` is `textMessage` are displayed.
 - Media, stickers, contacts, locations, polls, and other notification types are not processed.
-- One active conversation only; there is no durable history or database.
+- One active conversation only. Messages live in React state with no persistence, so reloading the page or reconnecting clears the thread.
 - No backend proxy, server-side secret storage, user authentication, or tenant isolation.
-- No production-grade delivery-status, retry, or reconnect policy.
+- Delivery state is coarse: a bubble shows `sending`, `sent`, or `failed`, and a failed send is retried only when the user presses `Retry send`. There is no automatic backoff, no queue, and no reconnect on its own — HTTP requests are issued with retries disabled, and a dropped receive loop stops until the user presses `Retry connection`.
 - Direct browser access may be blocked by CORS.
 - API credentials are exposed to the browser and must be treated as compromised.
 
