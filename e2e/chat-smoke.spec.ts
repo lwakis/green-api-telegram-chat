@@ -80,6 +80,15 @@ const RESPONSIVE_VIEWPORTS = [
   { width: 1280, height: 800 },
 ] as const
 
+// Short viewports are where the panel used to overflow: the fixed header, transport strip and
+// composer are ~271px, so a 500px-tall screen leaves the thread almost nothing and is the strictest
+// case for the composer holding the bottom slot.
+const COMPOSER_PIN_VIEWPORTS = [
+  ...RESPONSIVE_VIEWPORTS,
+  { width: 1280, height: 500 },
+  { width: 375, height: 500 },
+] as const
+
 // Bounded because the focusable set changes with the phase: an unbounded walk could never prove
 // that it stopped on the submit control instead of simply running out of focusable elements.
 const TAB_STEP_LIMIT = 16
@@ -461,6 +470,86 @@ test("lays out without horizontal overflow and keeps the composer usable at ever
     ).toBeLessThanOrEqual(connectedScroll.clientWidth)
 
     await expectRightEdgeWithinViewport(composerInput(page), width, "composer")
+  }
+})
+
+type VerticalPin = {
+  readonly wrapBottom: number
+  readonly viewportHeight: number
+  readonly pageScrollHeight: number
+  readonly pageClientHeight: number
+}
+
+async function readVerticalPin(page: Page): Promise<VerticalPin> {
+  return page.evaluate(() => {
+    const wrap = document.querySelector(".chat-composer-wrap")
+    const scroller = document.scrollingElement
+
+    return {
+      wrapBottom: wrap instanceof HTMLElement ? wrap.getBoundingClientRect().bottom : Number.NaN,
+      viewportHeight: window.innerHeight,
+      pageScrollHeight: scroller?.scrollHeight ?? 0,
+      pageClientHeight: scroller?.clientHeight ?? 0,
+    }
+  })
+}
+
+async function expectComposerAtViewportBottom(page: Page, label: string): Promise<void> {
+  const formBox = await page.getByRole("form", { name: "Message composer" }).boundingBox()
+
+  if (formBox === null) {
+    throw new Error(`${label}: the composer form has no layout box`)
+  }
+
+  const pin = await readVerticalPin(page)
+
+  if (!Number.isFinite(pin.wrapBottom)) {
+    throw new Error(`${label}: the composer wrapper has no layout box`)
+  }
+
+  const formBottom = formBox.y + formBox.height
+
+  expect(
+    formBottom,
+    `${label}: composer bottom is ${formBottom}px in a ${pin.viewportHeight}px viewport`,
+  ).toBeLessThanOrEqual(pin.viewportHeight)
+
+  expect(
+    Math.abs(pin.viewportHeight - pin.wrapBottom),
+    `${label}: composer wrapper bottom is ${pin.wrapBottom.toFixed(1)}px, viewport is ${pin.viewportHeight}px`,
+  ).toBeLessThanOrEqual(1)
+
+  // A document that scrolls is what let the composer leave the viewport entirely, so the panels are
+  // required to fit rather than overflow.
+  expect(
+    pin.pageScrollHeight,
+    `${label}: the document scrolls (${pin.pageScrollHeight} > ${pin.pageClientHeight})`,
+  ).toBeLessThanOrEqual(pin.pageClientHeight)
+}
+
+test("keeps the composer flush with the bottom of the viewport at every width", async ({
+  page,
+}) => {
+  await installMocks(page)
+
+  for (const { width, height } of COMPOSER_PIN_VIEWPORTS) {
+    await page.setViewportSize({ width, height })
+    await page.goto("/")
+
+    await expect(
+      page.getByRole("form", { name: "GREEN-API connection setup" }),
+      `setup form must render at ${width}px`,
+    ).toBeVisible()
+    await expectComposerAtViewportBottom(page, `setup phase at ${width}x${height}`)
+
+    await fillSetupForm(page)
+    await expectComposerReady(page)
+    await expectComposerAtViewportBottom(page, `connected phase at ${width}x${height}`)
+
+    await page.getByLabel("Message text").fill(OUTGOING_TEXT)
+    await page.getByRole("button", { name: "Send" }).click()
+    await expect(page.getByRole("article", { name: "Outgoing message, Sent" })).toBeVisible()
+    await expectComposerAtViewportBottom(page, `after sending at ${width}x${height}`)
   }
 })
 
