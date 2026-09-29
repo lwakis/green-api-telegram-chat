@@ -33,26 +33,22 @@
 }
 
 @media (max-width: 720px) {
+  /* The rail stacks above the conversation, so it is capped and scrolls internally. That leaves
+     the chat panel owning the bottom of the screen with the composer pinned to the viewport. */
   .app-frame {
-    display: block;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .connection-panel {
-    min-height: auto;
+    min-height: 0;
+    max-height: 38dvh;
     border-right: 0;
     border-bottom: 1px solid #171717;
   }
 
-  .connection-panel__content {
-    overflow: visible;
-  }
-
   .browser-warning {
     padding-block: var(--space-3);
-  }
-
-  .chat-panel {
-    min-height: 78dvh;
   }
 
   .chat-header {
@@ -99,10 +95,6 @@
 
   .connection-summary {
     padding-bottom: var(--space-4);
-  }
-
-  .chat-panel {
-    min-height: 82dvh;
   }
 
   .chat-header {
